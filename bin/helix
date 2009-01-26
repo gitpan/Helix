@@ -1,0 +1,959 @@
+#!/usr/bin/perl
+# ==============================================================================
+#
+#   Helix Framework
+#   Copyright (c) 2009, Atma 7
+#   ---
+#   helix - application code generator
+#
+# ==============================================================================  
+
+use Getopt::Long;
+use warnings;
+use strict;
+
+# constants
+use constant
+{
+    TYPE_CGI  => 0,
+    TYPE_FCGI => 1
+};
+
+&main;
+
+# ------------------------------------------------------------------------------
+# print_usage()
+# print usage information
+# ------------------------------------------------------------------------------
+sub print_usage
+{
+    print << "USAGE";
+Usage: helix [options] <application_name>
+
+Generates code for application <application_name> with given options.
+
+Options:
+    -t --type       application type:
+                        cgi  - CGI application (default)
+                        fcgi - FastCGI application
+    -v --verbose    verbose output
+    -h --help       print this help
+
+USAGE
+}
+
+# ------------------------------------------------------------------------------
+# create_directory(\%app, \%options, $dir)
+# create directory
+# ------------------------------------------------------------------------------
+sub create_directory
+{
+    my ($app, $options, $dir, $len, $status);
+
+    ($app, $options, $dir) = @_;
+
+    # delete starting "dir:"
+    substr($dir, 0, 4) = "";
+    $dir =~ s/\[\$app_name\]/$app->{"name"}/g;
+
+    $status = mkdir($dir);
+
+    if ($options->{"verbose"})
+    {
+        $len = length($app->{"name"}) + 45;
+
+        printf("  > %-".$len."s", $dir);
+        print $status ? "OK" : "FAIL";
+        print "\n";
+    }
+
+    shift @{ $app->{"skel"} };
+    $app->{"fail"} = 1 unless ($status);
+}
+
+# ------------------------------------------------------------------------------
+# create_file(\%app, \%options, $file)
+# create file
+# ------------------------------------------------------------------------------
+sub create_file
+{
+    my ($app, $options, $file, $content, $time, $type, $hex, $len, $status);
+
+    ($app, $options, $file) = @_;
+
+    # delete starting "file:"
+    substr($file, 0, 5) = "";
+    $hex = 0;
+
+    # is it a hex-encoded file?
+    if ($file =~ /^hex:/)
+    {
+        substr($file, 0, 4) = "";
+        $hex = 1;
+    }
+
+    $file =~ s/\[\$app_name\]/$app->{"name"}/g;
+
+    # check application type
+    if
+    (
+        ($file =~ /\.fcgi$/ && $app->{"type"} == TYPE_CGI)  ||
+        ($file =~ /\.cgi$/  && $app->{"type"} == TYPE_FCGI)
+    )
+    {
+        shift @{ $app->{"skel"} };
+        return;
+    }
+
+    if ($status = open FILE, ">$file")
+    {
+        $time    = localtime;
+        $type    = $app->{"type"} == TYPE_CGI ? "cgi" : "fcgi";
+        $content = shift @{ $app->{"skel"} }; 
+        $content =~ s/\n$//;
+
+        if ($hex)
+        {
+            # hex-encoded binary file
+            binmode FILE;
+            $content =~ s/\n//g;
+            $len = 0;
+
+            while ($len < length($content))
+            {
+                print FILE pack("H2", substr($content, $len, 2));
+                $len += 2;
+            }
+        }
+        else
+        {
+            # text file
+            $content =~ s/\[\$app_name\]/$app->{"name"}/g;
+            $content =~ s/\[\$time\]/$time/g;
+            $content =~ s/\[\$type\]/$type/g;
+            print FILE $content;
+        }
+
+        close FILE;
+    }
+
+    if ($options->{"verbose"})
+    {
+        $len = length($app->{"name"}) + 45;
+
+        printf("  > %-".$len."s", $file);
+        print $status ? "OK" : "FAIL";
+        print "\n";
+    }
+
+    $app->{"fail"} = 1 unless ($status);
+}
+
+# ------------------------------------------------------------------------------
+# main()
+# main function
+# ------------------------------------------------------------------------------
+sub main
+{
+    my (%app, %options, $data_section, $state, $part, $answer); 
+
+    # get command line options
+    Getopt::Long::Configure("bundling");
+
+    GetOptions
+    (
+        \%options, 
+        "verbose|v", 
+        "type|t=s", 
+        "help|h"
+    );
+
+    $app{"name"} = shift @ARGV || "";
+    $app{"type"} = ($options{"type"} && $options{"type"} eq "fcgi") ? TYPE_FCGI : TYPE_CGI;
+    $app{"fail"} = 0;
+
+    # check for mandatory options
+    if ($options{"help"} || !$app{"name"} || $app{"name"} =~ /[^\w\d]+/)
+    {
+        print_usage;
+        exit 0;
+    }
+
+    # check if FCGI package is available
+    if ($app{"type"} == TYPE_FCGI)
+    {
+        eval "use FCGI";
+
+        if ($@)
+        {
+            print qq#FCGI package was not found on your computer, so your application WILL NOT WORK 
+until you install FCGI. 
+
+Create FastCGI application anyway? (yes/no) [yes]: #;
+
+            $answer = <>;
+            $app{"type"} = TYPE_CGI if ($answer =~ /^n/i);
+
+            print "\n";
+        }
+    }
+
+    # proceed
+    print "Creating application \"$app{'name'}\" (".($app{"type"} == TYPE_FCGI ? "Fast" : "")."CGI)\n";
+
+    {
+        # read entire data section
+        local $/;
+        $data_section = <DATA>;
+    }
+
+    # get files & directories structure
+    $app{"skel"} = [ split /__([\w\d:\[\]\$\/\-\.]+|\_{1})__\n/, $data_section ];
+    $state       = 0;
+
+    # main cycle
+    while (scalar @{ $app{"skel"} })
+    {
+        $part = shift @{ $app{"skel"} };
+
+        next if $part =~ /^\n$/;
+        
+        # directory section
+        if ($part =~ /^dir:/) 
+        {
+            if ($state == 0)
+            {
+                print "Creating directories...\n";
+                $state = 1;
+            }
+
+            create_directory(\%app, \%options, $part);
+            next;
+        }
+
+        # file section
+        if ($part =~ /^file:/)
+        {
+            if ($state == 1)
+            {
+                print "Creating files...\n";
+                $state = 2;
+            }
+
+            create_file(\%app, \%options, $part);
+            next;
+        }
+
+        $app{"fail"} = 1;
+        last;
+    }
+
+    print "\n";
+    print $app{"fail"} ? "Failed creating application" : "Application successfully created";
+    print ".\n\n";
+}
+
+=pod
+
+=head1 NAME
+
+helix - Helix Framework application code generator.
+
+=head1 SYNOPSIS
+
+helix [options] <application_name>
+
+Options:
+
+    -t --type       application type:
+                        cgi  - CGI application (default)
+                        fcgi - FastCGI application
+    -v --verbose    verbose output
+    -h --help       print this help
+
+Examples:
+
+    helix -t cgi -v Example
+    helix -t fcgi AnotherExample
+    helix ThirdExample
+
+=head1 DESCRIPTION
+
+The I<helix> code generator will help you to create the application skeleton, so
+you won't need to make applications from scratch. It creates a simple example 
+application with 2 controllers (default page and error controllers) and a basic
+configuration without any drivers.
+
+The application name must consist of 1 or more alphanumeric characters.
+
+Using the example application name I<Example> and I<CGI> application type, the 
+application directory will contain the following items:
+
+=over 4
+
+=item cgi-bin/
+
+A directory with executable contents. All your application scripts and modules
+are placed here. Contents of this directory should be moved into C<cgi-bin>
+directory on your web server.
+
+=over 4
+
+=item index.cgi
+
+CGI gateway of the application. All user requests will come through this file.
+
+=item lib/
+
+A directory containing all application modules. If your application will use 
+other modules, place them here too.
+
+=over 4
+
+=item Example.pm
+
+A main module of the application. Contains almost nothing - some subclassing
+stuff and application version definition. 
+
+=item Example/
+
+A directory with application configuration and other stuff used to interact with
+I<Helix Framework> .
+
+=over 4
+
+=item Config.pm
+
+Application configuration. Generated configuration contains only basic settings,
+so you should edit this file first and specify application settings manually.
+
+=item Controller/
+
+A directory containing application controllers.
+
+=over 4
+
+=item _Error.pm
+
+An error controller of the application.
+
+=item Default.pm
+
+A default controller of the application.
+
+=back
+
+=back
+
+=back
+
+=back
+
+=item static/
+
+A directory containing static data - images, stylesheets and javascript. 
+Contents of this directory should be moved into C<htdocs> (C<httpdocs>, 
+C<www>, C<wwwroot>) directory on your web server.
+
+=over 4
+
+=item _htaccess
+
+I<Apache> configuration file. Contains I<mod_rewrite> rules for the application.
+Rename this file to C<.htaccess> while copying the application into web server 
+directories.
+
+=item img/
+
+A directory containing images for the application.
+
+=over 4
+
+=item flag.png
+
+Nice flag image :)
+
+=item logo.png
+
+I<Helix Framework> logo.
+
+=back
+
+=back
+
+=back
+
+The application directory for the I<FastCGI> application type will be the same,
+except the C<cgi-bin/index.cgi> file - in I<FastCGI> version there will be
+C<cgi-bin/index.fcgi> file instead.
+
+=head1 NOTES
+
+The application generated using this script will work only on I<Apache> web 
+server with I<mod_rewrite> module installed. Support of other servers will
+be added in future versions of this script.
+
+To make your application work perform the following actions:
+
+1. copy the C<cgi-bin> directory contents into the C<cgi-bin> directory on 
+your web server.
+
+2. set C<rwx-r-x-r-x> permissions on C<cgi-bin/index.cgi> (or 
+C<cgi-bin/index.fcgi>) file.
+
+3. copy the C<static> directory contents into the C<htdocs> (C<httpdocs>, 
+C<www>, C<wwwroot>) directory on your web server.
+
+4. rename the C<static/_htaccess> file into C<static/.htaccess>. Possibly, you
+will not need edit this file, but it may be needed if the C<cgi-bin> directory
+of your web server is located outside the web server's root (C<htdocs>, 
+C<httpdocs>, C<www>, C<wwwroot> or something like that).
+
+=head1 SEE ALSO
+
+L<Helix>, L<Helix::Application>
+
+L<http://www.atma7.com/products/helix/> - official project web page.
+
+=head1 LICENSE
+
+This library is free software; you can redistribute it and/or modify it under 
+the same terms as Perl itself.
+
+=head1 AUTHOR
+
+Anton Belousov, E<lt>abel@cpan.orgE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (c) 2009, Atma 7, L<http://www.atma7.com>
+
+=cut
+
+__DATA__
+
+__dir:[$app_name]__
+__dir:[$app_name]/cgi-bin__
+__dir:[$app_name]/cgi-bin/lib__
+__dir:[$app_name]/cgi-bin/lib/[$app_name]__
+__dir:[$app_name]/cgi-bin/lib/[$app_name]/Controller__
+__dir:[$app_name]/static__
+__dir:[$app_name]/static/img__
+
+__file:[$app_name]/cgi-bin/index.cgi__
+#!/usr/bin/perl
+# ==============================================================================
+#
+#   Helix Framework
+#   Copyright (c) 2009, Atma 7
+#   ---
+#   index.cgi - CGI gateway
+#
+# ==============================================================================
+
+use lib "./lib";
+use Helix::Debug;
+use [$app_name];
+use warnings;
+use strict;
+
+# application initialization
+my $app = [$app_name]->new([$app_name]->TYPE_CGI);
+$app->handle_request;
+
+__file:[$app_name]/cgi-bin/index.fcgi__
+#!/usr/bin/perl
+# ==============================================================================
+#
+#   Helix Framework
+#   Copyright (c) 2009, Atma 7
+#   ---
+#   index.cgi - FCGI gateway
+#
+# ==============================================================================
+
+use lib "./lib";
+use FCGI;
+use [$app_name];
+use warnings;
+use strict;
+
+my ($rq, $app);
+
+$rq  = FCGI::Request;
+$app = [$app_name]->new([$app_name]->TYPE_FCGI);
+
+while ($rq->Accept >= 0) 
+{
+    $app->handle_request;
+}
+
+__file:[$app_name]/cgi-bin/lib/[$app_name].pm__
+package [$app_name];
+use base qw/Helix::Application/;
+use warnings;
+use strict;
+
+our $VERSION = "0.01"; # [$time]
+
+1;
+
+__file:[$app_name]/cgi-bin/lib/[$app_name]/Config.pm__
+package [$app_name]::Config;
+use base qw/Helix::Core::Config/;
+use warnings;
+use strict;
+
+our $VERSION  = "0.01"; # [$time]
+
+# ------------------------------------------------------------------------------
+# \% new($name)
+# constructor
+# ------------------------------------------------------------------------------
+sub new
+{
+    my ($class, $name, $type, $self);
+
+    ($class, $name, $type) = @_;
+
+    $self = $class->SUPER::new($name, $type);
+    $self->{"app"}->{"title"} = "[$app_name]";
+
+    return $self;
+}
+
+1;
+
+__file:[$app_name]/cgi-bin/lib/[$app_name]/Controller/Default.pm__
+package [$app_name]::Controller::Default;
+use base qw/Helix::Core::Controller/;
+use Helix;
+use warnings;
+use strict;
+
+# ------------------------------------------------------------------------------
+# default()
+# main page
+# ------------------------------------------------------------------------------
+sub default : Default : Action(".*")
+{
+    my $r = Helix::Core::Registry->get_instance;
+
+    my $query = $r->{"router"}->{"query"} || "";
+
+    if ($query eq "error")
+    {
+        throw Error::Core::Router::NotFound($query);
+    }
+
+    $r->{"cgi"}->send_header;
+    print << "EOT";
+<html>
+    <head>
+        <title>Helix Framework</title>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    </head>
+    <body>
+        <style type="text/css">
+            body {
+                margin: 0px;
+                padding: 0px;
+                text-align: center;
+                background-color: #FFF;
+            }
+
+            div#window {
+                width: 800px;
+                height: 100%;
+                background-color: #F0F0F0;
+            }
+
+            div#header {
+                padding: 10px 10px 10px 10px;
+                height: 88px;
+                text-align: left;
+                -moz-box-sizing: border-box;
+                background-color: #FFF;
+            }
+
+            div#header span {
+                color: #909090;
+                font-family: Verdana, Tahoma;
+                font-size: 7pt;
+                margin-left: 3px;
+            }
+
+            div#content {
+                width: 100%;
+                font-size: 9pt;
+                font-family: Verdana, Tahoma;
+                text-align: left;
+                color: #606060;
+                padding: 15px 15px 15px 15px;
+                -moz-box-sizing: border-box;
+            }
+
+            h1 {
+                font-size: 16pt;
+                margin-top: 0;
+                text-transform: lowercase;
+                font-weight: normal;
+                border-bottom: 1px dashed #606060;
+                padding-bottom: 5px;
+            }
+        </style>
+        <center>
+            <div id="window">
+                <div id="header">
+                    <a href="http://www.atma7.com/products/helix/" title="Helix Framework"><img src="/img/logo.png" border="0"></a><br />
+                    <span>version $Helix::VERSION</span>
+                </div>
+                <div id="content">
+                    <h1><img src="/img/flag.png"> welcome</h1>
+                    <p>This is the <em>"/$query"</em> page of <b>$r->{'cfg'}->{'app'}->{'name'}</b> 
+                    application. It is handled by the <em>$r->{'router'}->{'controller'}</em> controller. 
+                    This controller has only one function with <code>Action(".*")</code> code attribute, 
+                    so all user requests except <a href="/error/">/error</a> will lead to this page. The 
+                    <a href="/error/">/error</a> request will cause the controller to throw the 
+                    <code>Error::Core::Router::NotFound</code> exception to show you how error handling works.
+                    </p>
+
+                    <p>The <em>Helix Framework</em> is intended to turn a headache of web user interface 
+                    development into something easy and full of fun. The main goal of the project is
+                    to ease the creation of various web-based backends and systems such as project 
+                    management systems, customer relationship management systems, online payment 
+                    services and so on. You can use this framework for web site creation too, but it
+                    isn't recommended - try to use another powerful tools, that are intended for 
+                    this task (for example, Typo3 CMF, Moveable Type or, say, Wordpress).
+                    </p>
+
+                    <h2>Yet another Perl framework? What for?</h2>
+
+                    <p>
+                    There is a lot of another Perl frameworks today - Jifty, Hyper, Konstrukt, Rose,
+                    RWDE, Gantry, Catalyst, POE, BlackFramework, etc. Some of them have too much
+                    dependencies, some take too much time to do easy things, some force you to use
+                    only one way to do something (is it Perl or what?!), some of them are already 
+                    unsupported, some are too complicated and have a confusing API... all of this 
+                    was the cause of the <em>Helix Framework</em> birth.
+                    </p>
+
+                    <h2>Features</h2>
+
+                    <ul>
+                        <li>
+                            Small core
+                        </li>
+                        <li>
+                            Object oriented API
+                        </li>
+                        <li>
+                            CGI and FastCGI support
+                        </li>
+                        <li>
+                            A few dependencies
+                        </li>
+                        <li>
+                            TMTOWTDI
+                        </li>
+                        <li>
+                            Code generator
+                        </li>
+                    </ul>
+
+                    <br /><br />
+                </div>
+            </div>
+        </center>
+    </body>
+</html>
+EOT
+}
+
+1;
+
+__file:[$app_name]/cgi-bin/lib/[$app_name]/Controller/_Error.pm__
+package [$app_name]::Controller::_Error;
+use base qw/Helix::Core::Controller/;
+use Helix;
+use warnings;
+use strict;
+
+# ------------------------------------------------------------------------------
+# error($msg)
+# error handler
+# ------------------------------------------------------------------------------
+sub error : Error
+{
+    my ($r, $msg);
+    
+    $msg = shift;
+    $r   = Helix::Core::Registry->get_instance;
+
+    my $query = $r->{"router"}->{"query"} || "";
+    my $type  = ref $msg;
+
+    $r->{"cgi"}->send_header();
+    print << "EOT";
+<html>
+    <head>
+        <title>Helix Framework</title>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    </head>
+    <body>
+        <style type="text/css">
+            body {
+                margin: 0px;
+                padding: 0px;
+                text-align: center;
+                background-color: #FFF;
+            }
+
+            div#window {
+                width: 800px;
+                height: 100%;
+                background-color: #F0F0F0;
+            }
+
+            div#header {
+                padding: 10px 10px 10px 10px;
+                height: 88px;
+                text-align: left;
+                -moz-box-sizing: border-box;
+                background-color: #FFF;
+            }
+
+            div#header span {
+                color: #909090;
+                font-family: Verdana, Tahoma;
+                font-size: 7pt;
+                margin-left: 3px;
+            }
+
+            div#content {
+                width: 100%;
+                font-size: 9pt;
+                font-family: Verdana, Tahoma;
+                text-align: left;
+                color: #606060;
+                padding: 15px 15px 15px 15px;
+                -moz-box-sizing: border-box;
+            }
+
+            h1 {
+                font-size: 16pt;
+                margin-top: 0;
+                text-transform: lowercase;
+                font-weight: normal;
+                border-bottom: 1px dashed #606060;
+                padding-bottom: 5px;
+            }
+        </style>
+        <center>
+            <div id="window">
+                <div id="header">
+                    <a href="http://www.atma7.com/products/helix/" title="Helix Framework"><img src="/img/logo.png" border="0"></a><br />
+                    <span>version $Helix::VERSION</span>
+                </div>
+                <div id="content">
+                    <h1><img src="/img/flag.png"> error</h1>
+                    <p>As you can see, something weird happened while you tried to access 
+                    the <em>"/$query"</em> page. This page is handled by the 
+                    <em>$r->{'router'}->{'controller'}</em> controller, which is responsible for 
+                    application exception and error handling. So, let's see what happened.</p>
+
+                    <ul>
+                        <li>Exception type: <em>$type</em></li>
+                        <li>Exception string (stringified exception object): <em>$msg</em></li>
+                        <li>Exception message: <em>$msg->{'message'}</em></li>
+                        <li>File, in which exception was thrown: <em>$msg->{'file'}</em></li>
+                        <li>File line, at which exception was thrown: <em>$msg->{'line'}</em></li>
+                    </ul>
+
+                    <br /><br />
+                </div>
+            </div>
+        </center>
+    </body>
+</html>
+EOT
+}
+
+1;
+
+__file:[$app_name]/static/_htaccess__
+RewriteEngine on
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^(.*)$ cgi-bin/index.[$type]?query=$1 [L,QSA]
+
+__file:hex:[$app_name]/static/img/flag.png__
+89504E470D0A1A0A0000000D4948445200000010000000100804000000B5FA37EA00000001735247
+4200AECE1CE900000002624B474400FF878FCCBF000000097048597300000B1300000B1301009A9C
+180000000774494D4507D80A13031E34CD16A1010000016D4944415428CF7591CF2B047118C63F3B
+6397B1CBEE22739291522E426DCAC54564F30FB06DE6A275A1F6EA42FE816DF803F630B9B82837CA
+414AA4945CFC3A6C2416B3CBECDAC9B0BE0EEB67F2BE97A7B74F4F4FCF8B3EA70B5D13FCB78CE4B6
+45F4BE7BAF6FF4F3342B4F2E44CFFA6F06BB04822ACCE04C5BA3D5E82E47A67C3B01A7395C9D5092
+ED5C624D33091E5DAB3E98082F3825C5C6CDFA8AF5AA16D078E596E38212D93891D2990BD34F87E2
+12A45E55DA6B03322F78F113AE7B4E80046A6A291F23E40A643CB8142901358470E3C3AD12A43357
+A6974EDF2B32E052A24889323EEA9A9C8404A0A616F3E3281410BCE16063E3F08883352D01A43359
+137A286FE5AC322F3C51C0E2127B575A93A0E261E4C7E93D9487EECEEFB9E69C53A464C3C051CC23
+2A0451637E66959BB63DFF73DCD3EAB5039BFB2B005F95EADA58EE50E8C69FAABFE588B12366FFFC
+E5234325472A3F06497ECD0F209D299A0FB4C4FF05404DAD231BBF81770FC4ADCEB05386CD000000
+0049454E44AE426082
+
+__file:hex:[$app_name]/static/img/logo.png__
+89504E470D0A1A0A0000000D494844520000011F000000330806000000AE4E0CB400000001735247
+4200AECE1CE900000006624B474400FF00FF00FFA0BDA793000000097048597300000B1300000B13
+01009A9C180000000774494D4507D80C0C00100D89EC08B7000017804944415478DAED5D797054C7
+9DFEE6D47D6B2474A003C93A10230584109684C11C3606710ACC6183BDBB64618D5D7652954AAA92
+F04752D9A21C3BE572D94B208E712A261BB302EC701811CC2109844ED0E842279206DDE748333A46
+73EC1F628679D3FDE6101090DD5F1585E675BF7EEFF5F1BDDFEFEB5FF713188D462318181818FEC5
+10B22A606060781A103F89420D0623FA0647D033308C419506A3EA718C4D68A1D319000012B108EE
+6E2EF0F1744380AF1742827CE1E7E3C15A838181918FF3D04EE9D0D8DA85FAD62EB475F46152AB03
+00989D3AA3D5DF56FF7B79B8222632188931A1889E2B83502860ADC3C0F03D86E051359FE1110D4A
+AB9B51DDA88456AB3393091FF1581EB3241FCB342F4F372C9647212D391A2E2E12D64A0C0C8C7C1E
+627C528B82F23A54D6B5C16034F25A383649C868918D42462E5209962F8D475A4A344422264F3130
+FCE0C9E7EEBD0E5CBAA9C0F8B89620189A65E30819715C31ABFC4181DED8B27611E604F9B0166360
+F821928F5E6FC0E52205EED4B77189C44152B1CC6F04208000C181DE100985E8ED1F85764AC7EB8A
+898442BCB2528EC52951ACD518187E48E4A39DD2E1CCE562B476F4DBB5548C1417CAFA7772420456
+6624C2D3C3150030A5D3A3F4CE3D5CB95907BDCE4077C58C40667A2C5E5A9EC45A8E81E187403EDA
+291D4E5E2C4247CFE023593BA6BF5F488FC7F2F404EAB59A5A7BF1BF676E416F3072CEB32C73E9E2
+7958B74ACE5A8F816116C3AE8A6B3018F0F5E59269E2315A5835167F3B433CF32264BCC40300B151
+4158FE7C022FF1188D4051690BAE16D6B3D66360F83E934F7E591DEE75F44D938D85FB63490A9662
+33611559E5599D69DF65CA581C034F7717AE45654570570AEEA2BEA987B52003C3F7917CDABBFA51
+5CD9445838D65A0E28A463A4E835A1417E0896D99FB1128B45F851D25C7339D63366A6DFA7CFDD86
+666C92B52203C3F7897CF406032E1654DA0C1AB42618AA2B66F1F7BC0899C337362F328828C3DA0A
+52AB2791F75D2D6B450686EF13F928EADB31A852DBD4778C3C2E11C7E5B2480B0AF0E65C43ABD5E2
+CA952B3877EE1C8687873969C1322FAAB5636D659557B6A3A76F84B52403C32C03756D97C16044F1
+9D465248E611956104E686F82334C80F128908C323636869EB837A6C924346EE6E52CE75FEF8C73F
+A2BABA1AEEEEEEC8CBCBC3871F7E08A9743A8FBB9B0BDDE2A2105CFE8D266CDFBC88B52603C36C27
+9F7BF77B313C3AE610F18406F9217BE58F20B3B26AF47A038AEFB4E04A612DF486E9930C56B3FAC5
+C5C5F8C94F7E82C4C444ECDBB70F2D2D2D4848989E0933188DFC714256AE9EA2BA03D92F2F809B15
+B9313030CC32B7ABB6E93ED56DB276B34282FCF0FA964C8278004024122223351639EB169BF38FAA
+273879A2A2A270EEDC397CF1C517904824080D0D35A78DAA27B8223745F036DD974E6740755D176B
+4D0686D94C3E46A3112DCA5EBBB35900B07E450A246291CD0B243E178AF898390080AE1E1527EDBD
+F7DE834C268346A3C12F7EF10B787B3F24B1CEAE61D2DAB126410B126A68EA65ADC9C0309BDDAEA1
+110DC6C6B536F7DE8111F0F7F5E04C9BF7F5F5E1E4C993D06834C8CECEC6FCF9F3CD69497161A86B
+ECC6DDA66EAC7D71010482E9BD7A6432190E1E3C48BDB1BB8DDD5C7DC78EFBD7D63EC85A93816136
+5B3EFD83A3A4D6633DDD8D0782B0053EFAE823F4F5F5C1C3C303870F1FC6C8C8C319280FF769F178
+5835868666FB81816AF504AA6A3A1FBA59062BE201293CAB5413181F9F622DCAC0305BC947A51E27
+5C1B624ADD080C0E6960B92CACB5B515D9D9D978F3CD3731353585CECE4E0B42539BCBB978A57A7A
+F5BA0D5CB85C83A9293D976C6851D456EEE0B06A9CB52803C36C75BB2627A778974858EA406ACD24
+EA9BBB91101B0200484F4FC7B163C7E0EEEE8EC0C040CC9B370FC0F4B47D85A2CD5CCEC090065F9D
+29C5CE2D4B2091907AD195FCBBA8ACBA4FBA7AE05FD06AFA3D31C12C1F0686594B3E46F3741288C5
+9DD66470FE8A024181DEF0F7F5C081030750585888B1B13164656599E3752EE7D7A2B347C529ABA1
+B917FF73FC3A562D8B476C7410C46221EE770E23FF6623EA1B7BECEA3B54B7D074EF0C0C0CB302C4
+961AC5B79BF0CF1B35DCC14D19F8468BAD4E5765262225692EA492875CD6DDABC2E5823A343C58FC
+693766E821E7F10737F25862A663EF1E5C8EF0305FD6AA0C0CB3D1F2316DEE6597241EA44D4C4CE1
+FC770A5CBC5A0D99BFD77484B36A0CAAD10987C8CBD646F27C1BCF73E8D2C2F2F1F676652DCAC030
+5BC927C0CF8B2BE8C28EC5F28018743A03BA7A55641E27B41B3E8283BDFC005C5DC4F0F662E4C3C0
+306BC92728C01B2F2E4D845E6FE058171CDF8C320BE5485E67CB31FF67EB1A0FFEF0F7671F1D6460
+984D10B06FB533303C1B181A1AC2E0E020A6A6A620168BE1E7E7077F7F7F7350EEF7DEF2F9EFC397
+61B43235C2C37CF1C69E346A01EF7F7005533A3DE7D89C606FFCC7BFA59B7F9796B5E3D2E5996D7B
+EAE7EB8EB70E649A7FFFE35C35AAAAC9755C6FEDCF849F9FBB4365D6DDEDC1E9AF15C4F135ABE2B1
+242D02005071FB3EBECDAB23F204067860DFBF2F25BE23D6DD3382CF8F971075E7EA2AC17FFD6706
+DCDDA767FF7EF39BDFCCA81E5E7BED35C4C4C40000944A258E1F3FEED0791289049E9E9E080E0EC6
+82050B909898E870673E7AF4287A7AC8A0D0A8A828ECD9B3C76639252525B878F1226FFAAE5DBBF0
+DC73CF718EA9542A7CFAE9A7D0E9E871608B162D427676B6F9F7EDDBB771F6ECD919D5A7ABAB2BDE
+79E71D180C067CFCF1C7989AE28669AC5BB70E8B172F36FFD6E974F8E4934F38C1B300101D1D8D3D
+7BF6708E5DB870016565655C392320801ACDDFD6D6864B972EA1A2A282D85606003C3C3C909C9C8C
+952B5762C18205BCCFD3D0D080BFFFFDEFF6AD0D81C0DC27424242909C9C4CB48309C78F1F8752A9
+E41C130A85F8D5AF7EE5F4F55F7DF555F3A2715EF2E91FD010277A79BAF0163A303886A9292EF9B8
+5A7D65747C620A0303633333CDC0EDE06AB5965A965EEFB801A7D5EAA86558C60925CB43905FD082
+76E510F77907C65056A1447A5AA485CB68C4F96FEBA875B765B3DC4C3C0050575737A37AD0681E96
+3D3E3E3EA372CE9C3983A4A424BCFBEEBBF0F2F2B299B7A3A303F9F9F930180C445A636323D6AF5F
+8F8080009B6F715BF778FBF66DA2D3373434A0AAAA8AF79C909010CEEFE1E1E119D7A79B9B1BF47A
+3DDCDDDDD1DFDFCF098A05808888080EF9747575A1A4A48408E7686F6FC7B66DDBE0E6E6663E5656
+5646DC57464606E7F7D4D414FEF6B7BF212F2FCF66888846A3415151118A8A8A909A9A8AFDFBF753
+DB6E7474744675919B9B8BD4D4541C3C7890F30C0070EFDE3D343636728E8944646C5E7777373EF8
+E0038C8E8E52AFB17BF76E82780007F670FEC18A616211B66D4D86584C56515EDE5D0E5135B70CA0
+A6A69BC81719E9878CA551CFD473D5D4D4E0D34F3FA5928A250A0A0A78F3E8743ADCB871E391EFC3
+7AD0D5D4D4FCCBEB4328142236369638DEDADACAF9AD5028A824A1D168D0DCDC6CF162D312440680
+43B43A9D0E1F7DF4112E5EBCE8546C5A7979397EFBDBDFF20EF299A2BCBC1C9F7DF6D98CCE1D1D1D
+C5FBEFBFCF7B4FDBB76FC7860D1BE875CF68861FE1E1BE58B19CEC98C3AA095CBDD604603A82FBFC
+05722B579148806D5B539EC9CF3C575656A2A9A98937DD1172292C2C845EAF9FF13DB4B5B541AD56
+73ACC7A7413E00101717471CEBECECC4E4E424877C6CD5A7A5C5A752A9883C960477EAD429545454
+CCE85E954A25FEF4A73F3DF63A282A2A4247478753E768B55AFCE10F7F4057177D3B9B2D5BB660EB
+D6AD8E6B3EFF4A64AF9B8FB838991D0BE4E90EDED52B9F435575177A7AB8CC7EBDA019E94B22D1DA
+3E88B6F621E2BC152FC4222CD4B1CF3B474444E08D37DEB09BC71E366CD880DDBB779B09A4BBBB1B
+7FFEF39F71F7EE5D52F7AAABA30E3A00A8AEAE467F7FBFDD41D0D2D2C2AB17F05919266B6A727212
+4D4D4D58B870E103777600DDDDDDD4BCCE62D3A64D484E4EB67B2F26378366F9A8D56AF4F7F7232C
+2C0C1A8DC626592B140AECDEBD1B0281006D6D6D44BABBBB3BC2C3C3014CEFFE70E1C205AA16B37A
+F56AAC5FBF1E32990C030303F8EEBBEF70F6EC59A21ECACACA505B5BCBD939C2965668D2C9743A1D
+944A258E1D3B46587646A311F5F5F5080B0B73A88E0D06038E1D3B46ED5BA6BEF8EAABAFDA1EDB4F
+7360FBFBBB3FF311C952A918DBB626E3C8D19B30188C16ACAFC73FCE55A3B393DC3F3A30D0036B56
+C739A53F38D2919C731BC5080F0F474E4E0E7EF7BBDFD9D490AC71FDFA75E2D882050B505D5D4DE4
+73867CE6CD9BC719C435353566F2696868E008CD31313184DEE0284243439DAACFE0E060787B7B73
+C464A3D188F6F676848585A1A9A9096363FC9A65676727FAFBFB2193C988410D0073E7CE85ABABAB
+D99DD56AB5449E975F7E99F30292C964D8B97327BCBCBCF0E5975F124471F5EA55A7FB8C582C4674
+7434366EDC888F3FFE9848B7F58C34AD88CF3A5EBB76ADF92568F305E0C885C6C775A8AFEFA5FEB3
+1C90CEC2603442AF37D8FCF72C4402CC8B0EC0F314ED4651D54588CC0201B06D4B32A452F133419E
+434343D4E3BEBE74D21F1919C1EDDBB739C73C3D3DB163C70E0885DCEE52525282F171C77712983F
+7F3E6786ACB6B6D6FC56B776B91E3719DB82ABAB2B222323A9AEA13D97CB645198EE9F463E96047D
+E7CE1D225D2291F0EA226BD6AC818F8F0FD53A9DA965C8D72768D7A1E1DAB56B3873E60CDD5358BD
+1A7BF7EE758C0C1DC9D4D33B8AA39F153DF646FFF24439BE44B9CD3C6FBF958579D1014F75000B04
+02AC5B9B88DADA6E0C0DDB1E6CA98BE6222E2EC8A9F2070606909B9BCB9BBE75EB5662E0F375AAFA
+FA7AB365D3D2D2429DEE160A85484949A19671EBD62D8ED661B27A6262623067CE1C8E983A3A3A8A
+8A8A0A6466663AA8A185C3DBDBDBAC8928954A8C8C8CC0DBDB1BB5B5B59CFB4B4C4CC437DF7C33A3
+F63A72E4088E1C396233CFFEFDFBB162C50A0E4158CFB4B5B6B6C2603010C7434242303A3ACAD1AC
+2A2B2B91959585FBF7EFF392CFE4E424357461CE9C39F0F7F7E7B1BCA5888D8D45797939E1160E0F
+0FF39E67425F5F9FB94F8C8E8EA2B1B1117979795402B435956F825EAFE715A7452211366FDEEC70
+28C7B3F17A9E0570739320676B323EFBBC98378FA787141B3724395D767F7F3F4E9D3AC59BBE79F3
+6687C8A7B0B01085858576F3BDF4D24B9CFDB2EDB95CA9A9A9100804484D4D256672AE5FBF8E8C8C
+0C873A9C4422417C7C3C4A4A4ACC16437D7D3D222323D1D7D7C7198CB6A6F19F0468EEA352A9444F
+4F0FF1CC4B962C8152A9E488C6757575181818C0E0E0203120A3A3A3014C4FAFD3DC5D7BCFEAE7E7
+4725018D4663977C2E5DBA844B972E39A493D1AEC347407CC7FFFAD7BFE2BDF7DE734C0364B4E238
+7C7DDD2112096C68075EF0707F76BFA0211008F0CA2BAFE0B5D75EA392455B5B1BEEDDBB47108649
+BC5DB488FC3C516D6D2D7A7B1DDF3F3B29894BCE353535A8AFAFE774E8C4C4446A3CC99344545414
+24126E7C9A4AA54241410131D852525208CB51A552516700FDFDFDCDE4623018A803D7FABA348BC2
+1A46A3F191661B2DCBCEC9C9C1962D5B1E4B3D161717535DCB67CEF2090CF4B03B585D5C9E0DE34C
+AF37E0FF4EDDB119CCD8DC3280B27225D216473C73C4939C9C8CBD7BF7DA9CCDC8CFCF2734B6B8B8
+3873505B6C6C2CFCFCFC389A815EAFC78D1B376C4EA95AC214616DBA4E5D5D1D610D581394B3080D
+0DB5AB5F586B5EDEDEDE080E0EE6B84D7ABD1E972F5FE6E4F3F2F2427474347C7D7D39CF0180EACE
+C4C6C69AAD56A1500889444244534F4C4CD8BC579AAE261008CC7B66CD144B962CC1EBAFBF0E994C
+F658FBDAF1E3C7F1FBDFFFDEEEFD3934B283823CB16903DD1FFCFC8B12EE225427B06E6D227E9412
+86D98082C216B4B50DD9CDF78FB335888F0B726A7B0F7B53ED8E5A0119191958BA7429F2F2F20801
+57A150E02F7FF90B7EFAD39F9A675E2CA1D56A5154544469FB204EE46C686828215816161662E3C6
+8D108BED77A7909010F8F9F999DD93CECE4E8ECB25168B111F1F4FE84ECE60D3A64D78E185179C3A
+C7146C68ADD95807CF252424C0D5D5154141410809092134305BEE9C542A85A7A727517F3D3D3D30
+1A8DBCAE2B4D27128BC59CAFBDF061F5EAD5484A4AC2F9F3E78970819292120804021C3C78D0AEF5
+45C38A152BD0D0D040B8A5BDBDBD3873E60C76ECD8F1E8E4E3EE26416242304FA309F018ACBF671A
+BD7D6AE4FDB39EFAECD6B37D9A312D4E7F5D8537F7A639A1273D9EA9F6808000A4A5A521252505BF
+FCE52F898154555585A3478FE29D77DE2134248542419D05B97AF52AAE5EBD6AF3BA5D5D5D686868
+70E819C4623112121270F3E64DB32B624934616161F0F5F5A50EB8278DB8B8385CBB76CDAE05697A
+21C8E5726A34B3B5E563493EE1E1E1443DF7F7F743A9545263B9464646A83368818181F0F4F4B4FB
+4CC1C1C158BA7429E472397EFEF39F6360608070933C3D3DB16FDF3EA7EA2A2B2B0B3FFEF18F515C
+5C4C9DB63F77EE1CB2B2B26C5ADA4CF371C0DD3A75BA129393E462C72D9BE4080921DF3E8AAA4E54
+2A3A9FDA3D4BA552ECDAB58B9A76EBD62DB3E06B099AD0EC0C9C39DFD6AC4A6262A243E2FA93002D
+D8D0DA02B57409ED05325A06179A60B95ECC0483C18013274E10EE98C160406E6E2ED50A34C54739
+0A0F0F0FDEA0BF2B57AE10315CB6909E9E8E03070E402814223D3D9D4A9A3A9D0E9F7FFEB9CD5099
+A72AA8D4D7F742ADB66F5EA72D8EB0ABFD9CFE5A6133B6462C1662DBD664B8BA3A675E1697B4A3B1
+898CF68D8EF6C7F34BA3101CEC8523476F10FB119DF9A60AB13181F0F0783A02F4C2850B91949444
+5DB2909B9B8BC58B179BDDA4A1A121CE128199A0ACAC0C6AB5DAA1B7714242026F04F3A3EA3DA67B
+7144044F4D4D35CF4499AC045F5F5FEAEA72607A162E3838986329B9B9B9F1C63A858787138B3533
+333371FAF46962098642A1C0A14387B066CD1A04050561787818050505D4182389448255AB56395D
+2F999999F8F6DB6FA9D1CD274F9E44525292DD594BA15088B7DF7EDB2C050885426CDFBE1D1F7EF8
+2191B7B6B61685858558B66CD9B3473EC5A5ED40A9036FCAA410BBE473B7DE7667934A44D8BC7181
+53F737383886F3DFD2D66D09B165931C42A10031F302B0686138CA2BEE5B99CB13387BAE063B772C
+7C2A752B1008B073E74E1C3A748878FB747474E0C68D1B58BE7C3900E0E6CD9BC45BD734B8687A93
+5AAD26B65A181B1B436969295E7CF145875C81C0C0408220A452A95311D37C282D2D4569A9FD8E15
+1818C8211FA9548AC8C8485EF291CBE51CABCCD3D313B1B1B1BC2BF169CFE2E1E1813D7BF6E0934F
+3E21D25A5B5B1D5AB7959D9DCD1B2A61CF72DBB973270E1F3E4CA4353636A2A2A202A9A9A976FB95
+B5B6979A9A8A989818CE025B134E9C3881850B17525F4ACCEDE281C160C4E9AF15D40F1166664499
+978508040264AF9B0F3737D2A22A2D6FB74B8A4FDA8D78FEF9E7E996E2E9D3D06AB5301A8DC8CFCF
+27D2838282F0EB5FFF1A870E1D22FEFDEC673FA39212DF161CB4B767626222713C2222C22111F549
+EB3E7CA00566DA72BDF888342323C3E1D941DAB9393939337E3EB95C0EB95C4E4DCBCDCD9D51D4B4
+4020C0F6EDDBA9692A958A779F1F463E3CA8B87D1FB575A4E8E9EBE38A9756C7738EF9F8B8E1E597
+E289BC4623907BAAF2A97E4F6CFBF6EDD4998CDEDE5E5CBF7E1DCDCDCD8415631A687CB35732998C
+BA1CA1A1A1817785B323EE95F5F28BA7013EC2707373A36A427CE4231289CCDFAEA30DD66DDBB6E1
+ADB7DE72986C5D5C5CB07BF76E1C3C78F09162A084422176EDDA45ADE7D6D656141717CFA8DCE4E4
+64EA9E3D264D89B64E4F4C1B5CD61291A78DCDC47C7C5C89CDC4BCBCB8F95DA462F8F8B83E428509
+2C443CC98CCA924A44E60A974844D432A40F5CBBF1F1295C2F68A6E6C9CE4EE26C0E667E232D8D46
+1565AD97DE6040E1CD7B58BD32CE6CEA1375EEEBDCE25A373737AAE560A94758EA14393939544DA7
+A1A1C1ACC15883CF623261E5CA95707171A176E0B0B030F8F9F911F76839D0E6CF9F8FA4A424CE9B
+D6D2E4974AA5C4F9D69B89F9FAFA52EBC151D0EA3D3A3A1A72B99CD84D31222282EA3A848686223D
+3D9DD8E1D0DBDBDB66E4B24020C0B265CB909696865BB76EA1B2B2126D6D6D181C1CC4E4E4244422
+117C7C7C101E1E0EB95C8EACAC2C9BFDC4CBCB8B5A17B47B888A8AC2860D1BA884505B5B6B6EFBE8
+E868E205C437196072F3BFFAEA2B6A7A51511141EC6C0F67060686A702E67631303030F2616060F8
+E1E0FF01461185F4507EA9780000000049454E44AE426082
+
