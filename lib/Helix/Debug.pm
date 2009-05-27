@@ -11,7 +11,8 @@ package Helix::Debug;
 use warnings;
 use strict;
 
-our $VERSION = "0.01"; # 2008-10-17 23:26:38
+our $VERSION         = "0.02"; # 2009-05-12 05:50:18
+my  $console_started = 0;
 
 # ------------------------------------------------------------------------------
 # BEGIN()
@@ -21,6 +22,26 @@ BEGIN
 {
     $SIG{"__WARN__"} = \&warn;
     $SIG{"__DIE__"}  = \&die;
+}
+
+# ------------------------------------------------------------------------------
+# start_console()
+# start debug console
+# ------------------------------------------------------------------------------
+sub start_console
+{
+    my $script;
+
+    # print HTTP header
+    print "Content-Type: text/html; charset=UTF-8\n\n";
+
+    {
+        local $/;
+        $script = <DATA>;
+    }
+
+    print $script;
+    $console_started = 1;
 }
 
 # ------------------------------------------------------------------------------
@@ -62,17 +83,15 @@ sub print_stack
     $stack = shift;
     $sublen = 0;
   
-    print "* Call stack\n* ----------\n";
-
     # count fields width
     $sublen = length($_->{"sub"}) > $sublen ? length($_->{"sub"}) : $sublen foreach (@$stack);
 
     # print stack
     foreach (reverse @$stack) 
     {
-        print sprintf
+        printf
         (
-            "* %05d %-${sublen}s  %s\n",
+            "{ line: '%05d', sub: '%-${sublen}s', file: '%s' },",
             $_->{"line"},
             $sub ? $sub : "main",
             $_->{"file"}
@@ -93,12 +112,12 @@ sub warn
     $message = shift;
     $phase = defined $^S ? "Runtime" : "Compile";
 
-    # print HTTP header
-    print "Content-Type: text/html; charset=UTF-8\n\n" if (!tell STDOUT);
-    
-    print "<pre>";
-    print "<b>$phase warning: $message</b>\n";
-    print "</pre>";
+    start_console unless $console_started;
+
+    $message =~ s/[\r\n]//g;
+    $message =~ s/'/\\'/g;
+
+    printf "<script>helixDebug.addWarning('$phase warning', '$message');</script>";
 }
 
 # ------------------------------------------------------------------------------
@@ -115,26 +134,27 @@ sub die
     # call original die if called from eval block
     CORE::die($message) if (defined $^S && $^S == 1);
 
-    # print HTTP header
-    print "Content-Type: text/html; charset=UTF-8\n\n" if (!tell STDOUT);
+    start_console unless $console_started;
 
-    print "<pre>";
-    print "<b>$phase error: $message</b>\n";
+    $message =~ s/[\r\n]//g;
+    $message =~ s/'/\\'/g;
 
-    # don't show stack on compile errors
+    print "<script>helixDebug.addError('$phase error', '$message', [";
+
+    # don't print stack on compile errors
     if (defined $^S) 
     {
-        print_stack(get_stack());
+        print_stack(get_stack);
     }
 
-    print "</pre>";
+    print "]);</script>";
 
     exit;
 }
 
 1;
 
-__END__
+=pod
 
 =head1 NAME
 
@@ -142,19 +162,19 @@ Helix::Debug - Helix Framework debugging facility.
 
 =head1 SYNOPSIS
 
-In CGI gateway of your application (C<index.cgi>) write:
+In CGI/FCGI gateway of your application (C<index.cgi>/C<index.fcgi>) write:
 
     use Helix::Debug;
 
 =head1 DESCRIPTION
 
 The I<Helix::Debug> package provides an easy way to avoid a confusing 
-I<Internal Server Error> message. It sends HTTP header before displaying 
-error, so you don't need to dig web-server's log to find the cause of 
-the error anymore. Obviously, it will do nothing if error is in your web-server
-configuration, so if I<Internal Server Error> message still remains, check your
-web-server's configuration. Also, this package displays a stack trace when 
-application dies. It is very useful in application development, so 
+I<Internal Server Error> web server message. It sends HTTP header before 
+displaying an error, so you don't need to dig web-server's log to find the cause
+of the error anymore. Obviously, it will do nothing if error is in your 
+web-server configuration, so if I<Internal Server Error> message still remains, 
+check your web-server configuration. Also, this package displays a stack trace 
+when application dies. It is very useful in application development, so 
 I<Helix::Debug> is used in CGI type applications by default.
 
 This package doesn't depend on any other framework package, so you can use it
@@ -165,6 +185,12 @@ careful using other packages, that modify or depend on C<$SIG{"__DIE__"}> and
 C<$SIG{"__WARN__"}> handlers.
 
 =head1 METHODS
+
+=head2 start_console()
+
+Start a javascript debugging console. Prints a minimal HTTP header and javascript
+code, so further error and warning messages could be displayed in nice-looking
+form.
 
 =head2 get_stack()
 
@@ -199,13 +225,11 @@ array of call stack hashrefs (result, returned by C<get_stack()> subroutine).
 
 =head2 warn($message)
 
-Custom warning handler. C<$message> - warning message to be displayed. Prints
-HTTP header before message, so warning message could be shown in web browser.
+Custom warning handler. C<$message> - warning message to be displayed.
 
 =head2 die($message)
 
-Custom error handler. C<$message> - error message to be displayed. Prints HTTP
-header before message, so error message could be shown in web browser.
+Custom error handler. C<$message> - error message to be displayed. 
 
 =head1 SEE ALSO
 
@@ -225,3 +249,85 @@ Anton Belousov, E<lt>abel@cpan.orgE<gt>
 Copyright (c) 2009, Atma 7, L<http://www.atma7.com>
 
 =cut
+
+__DATA__
+<body>
+<div id="helix-console" style="background-color: #F0F0F0; border: 1px solid #909090; position: absolute; top: 10px; left: 10px; width: 800px; font-family: Verdana, Tahoma; font-size: 12px; text-align: left;"></div>
+<script>
+    HelixConsole = function ()
+    {
+        this.errors   = [];
+        this.warnings = [];
+        this.details  = 0;
+    }
+
+    HelixConsole.prototype.addError = function (title, message, stack)
+    {
+        this.errors.push( { "title": title, "message": message, "stack": stack } );
+        this.redraw();
+    }
+
+    HelixConsole.prototype.addWarning = function (title, message)
+    {
+        this.warnings.push( { "title": title, "message": message } );
+        this.redraw();
+    }
+
+    HelixConsole.prototype.redraw = function ()
+    {
+        var obj, i, html, item, k, frame;
+
+        obj = document.getElementById("helix-console");
+        html = '<div id="helix-title" style="background-color: #7B84B0; color: white; padding: 10px; cursor: pointer;" onclick="helixDebug.toggleDetails();"><b>Helix::Debug</b> - ' + 
+            this.errors.length + ' errors, ' + this.warnings.length + ' warnings</div>';
+
+        html += '<div id="helix-details" style="display: none; padding: 10px; color: #606060;"></div>';
+
+        obj.innerHTML = html;
+        obj = document.getElementById("helix-details");
+        html = "";
+
+        for (i = 0; i < this.errors.length; i++)
+        {
+            item = this.errors[i];
+            html += '<div style="border-left: 4px solid red; padding: 0 10px 0 10px; margin-bottom: 10px;"><b>' + item.title + ":</b> " + item.message + 
+                    '<div style="font-size: 12px;"><pre>';
+            
+            for (k = 0; k < item.stack.length; k++)
+            {
+                frame = item.stack[k];
+
+                if (frame)
+                    html += frame.line + " " + frame.sub + " " + frame.file + "\n";
+            }
+
+            html += "</pre></div></div>";
+        }
+
+        for (i = 0; i < this.warnings.length; i++)
+        {
+            item = this.warnings[i];
+            html += '<div style="border-left: 4px solid #7B84B0; padding: 0 10px 0 10px; margin-bottom: 10px;"><b>' + item.title + ":</b> " + item.message + "</div>";
+        }
+
+        obj.innerHTML = html;
+    }
+
+    HelixConsole.prototype.toggleDetails = function ()
+    {
+        var obj = document.getElementById("helix-details");
+
+        if (this.details)
+        {
+            this.details = 0;
+            obj.style.display = "none";
+        }
+        else
+        {
+            this.details = 1;
+            obj.style.display = "block";
+        }
+    }
+
+    var helixDebug = new HelixConsole();
+</script>

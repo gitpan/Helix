@@ -8,10 +8,13 @@ package Helix::Core::Exception;
 #
 # ==============================================================================
 
+use base qw/Class::Accessor::Fast/;
 use warnings;
 use strict;
 
-our $VERSION = "0.01"; # 2009-01-25 17:38:39
+__PACKAGE__->mk_accessors(qw/message line file/);
+
+our $VERSION = "0.02"; # 2009-05-14 04:42:38
 
 use constant TITLE => "Base exception";
 
@@ -57,8 +60,9 @@ sub _init
 
     # get caller info
     (undef, $file, $line) = caller(2);
-    $self->{"file"} = $file;
-    $self->{"line"} = $line;
+
+    $self->file( $file );
+    $self->line( $line );
 }
 
 # ------------------------------------------------------------------------------
@@ -101,7 +105,7 @@ sub overloaded_str
 
     $self = shift;
     $str  = $self->TITLE;
-    $str .= $self->{"message"} ? ": $self->{message}" : "";
+    $str .= $self->message ? ": ".$self->message : "";
 
     return $str;
 }
@@ -122,7 +126,7 @@ General exception usage example:
     {
         # ...
         
-        throw Error::Core::Router::NotFound("Oops!");
+        throw HXError::Core::Compile("Oops!");
 
         # ...
     };
@@ -131,7 +135,7 @@ General exception usage example:
     {
         my $e = $@;
 
-        if ($e == "Error::Core::Router::NotFound")
+        if ($e eq "HXError::Core::Compile")
         {
             print $e; # prints "Oops!"
         }
@@ -145,8 +149,7 @@ General exception usage example:
 
 The I<Helix::Core::Exception> class is a base class for all core, driver and 
 application exceptions. It contains various methods that can be useful for 
-exception handling. This package is a rework of CPAN
-L<Exception> package.
+exception handling. This package is a rework of CPAN L<Exception> package.
 
 =head1 METHODS
 
@@ -181,7 +184,7 @@ Overloaded stringify operation. Returns exception message.
 
 L<Helix>, 
 L<Helix::Core::Exception::Builder>,
-L<Helix::Core::Exception::List>
+L<Helix::Core::Exceptions>
 
 =head1 LICENSE
 

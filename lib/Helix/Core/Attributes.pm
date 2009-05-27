@@ -1,17 +1,17 @@
-package Helix::Core::Controller;
+package Helix::Core::Attributes;
 # ==============================================================================
 #
 #   Helix Framework
 #   Copyright (c) 2009, Atma 7
 #   ---
-#   Helix/Core/Controller.pm - controller's base class
+#   Helix/Core/Attributes.pm - base class for attributes handling
 #
 # ==============================================================================
 
 use warnings;
 use strict;
 
-our $VERSION = "0.01"; # 2008-12-05 00:17:37
+our $VERSION = "0.02"; # 2009-05-14 04:57:12
 
 # ------------------------------------------------------------------------------
 # @ MODIFY_CODE_ATTRIBUTES($class, $code, @attrs)
@@ -19,23 +19,23 @@ our $VERSION = "0.01"; # 2008-12-05 00:17:37
 # ------------------------------------------------------------------------------
 sub MODIFY_CODE_ATTRIBUTES
 {
-    my ($class, $code, @attrs)  = @_;
+    my ($class, $code, @attrs) = @_;
 
     {
-        no strict 'refs';
+        no strict "refs";
 
-        unless (defined ${$class."::_action_cache"})
+        unless (defined ${$class."::_code_cache"})
         {
-            ${$class."::_action_cache"} = {};
-            ${$class."::_attr_cache"}   = {};
+            ${ $class."::_code_cache" } = {};
+            ${ $class."::_attr_cache" } = {};
 
-            *{$class."::action_cache"}  = sub { return ${$_[0]."::_action_cache"} }; 
-            *{$class."::attr_cache"}    = sub { return ${$_[0]."::_attr_cache"}   };
+            *{ $class."::code_cache"  } = sub { return ${ $_[0]."::_code_cache" } }; 
+            *{ $class."::attr_cache"  } = sub { return ${ $_[0]."::_attr_cache" } };
         }
     }
 
     $class->attr_cache->{$code} = [ @attrs ];
-    $class->action_cache->{$_}  = $code foreach (@attrs);
+    $class->code_cache->{$_}    = $code foreach (@attrs);
 
     return ();
 }
@@ -55,21 +55,21 @@ __END__
 
 =head1 NAME
 
-Helix::Core::Controller - base controller class for Helix Framework application.
+Helix::Core::Attributes - (optional) base class for application controllers.
 
 =head1 SYNOPSIS
 
 Controller for example application (C<lib/Example/Controller/Example.pm>): 
 
     package Example::Controller::Example;
-    use base qw/Helix::Core::Controller/;
+    use base qw/Helix::Core::Attributes/;
 
     sub default : Default
     {
         my $r;
 
         $r = Helix::Core::Registry->get_instance;
-        $r->{"cgi"}->send_header;
+        $r->cgi->send_header;
 
         print "Hello there!";
     }
@@ -78,11 +78,11 @@ Controller for example application (C<lib/Example/Controller/Example.pm>):
 
 =head1 DESCRIPTION
 
-The I<Helix::Core::Controller> class contains methods to construct application
-controllers. Each controller should contain at least 1 method for request
-handling. Request routing is done with help of code attributes. For additional
-information about routing please refer 
-L<Helix::Core::Router>. 
+The I<Helix::Core::Attributes> class contains methods to construct application
+controllers for L<Helix::Driver::Router::Basic> router driver. Each controller 
+should contain at least 1 method for request handling. Request routing is done 
+with help of code attributes. For additional information about routing please 
+refer to L<Helix::Driver::Router::Basic>. 
 
 This class should never be used directly.
 
@@ -100,7 +100,7 @@ Returns array of attributes for given C<$code> reference in given C<$class>.
 
 =head1 SEE ALSO
 
-L<Helix>, L<Helix::Core::Router>
+L<Helix>, L<Helix::Driver::Router::Basic>
 
 =head1 LICENSE
 

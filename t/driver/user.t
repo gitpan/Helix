@@ -4,7 +4,7 @@
 #   Helix Framework
 #   Copyright (c) 2009, Atma 7
 #   ---
-#   t/application.t - application tests
+#   t/driver/user.t - generic user driver tests
 #
 # ==============================================================================  
 
@@ -12,24 +12,18 @@ use Test::More tests => 5;
 use warnings;
 use strict;
 
-my $app;
-
 # ------------------------------------------------------------------------------
 # BEGIN()
 # test initialization
 # ------------------------------------------------------------------------------
 BEGIN
 {
-    use_ok("Helix::Application");
+    use_ok("Helix::Driver::Exceptions");
+    use_ok("Helix::Driver::User");
 }
 
 # methods
-ok( Helix::Application->can("start"),          "start method"          );
-ok( Helix::Application->can("handle_request"), "handle_request method" );
-
-$app = Helix::Application->new;
-
-# application types
-is( $app->TYPE_CGI,  0, "CGI application type"  );
-is( $app->TYPE_FCGI, 1, "FCGI application type" );
+ok( Helix::Driver::User->can("authorize"),   "authorize method"   );
+ok( Helix::Driver::User->can("unauthorize"), "unauthorize method" );
+ok( Helix::Driver::User->can("authorized"),  "authorized method"  );
 

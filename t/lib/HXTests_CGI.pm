@@ -1,10 +1,10 @@
-package CGI_STDIN;
+package HXTests_CGI;
 # ==============================================================================
 #
 #   Helix Framework
 #   Copyright (c) 2009, Atma 7
 #   ---
-#   t/lib/CGI_STDIN.pm - tied STDIN class for CGI POST tests
+#   t/lib/HXTests_CGI.pm - tied STDIN class for CGI POST tests
 #
 # ==============================================================================
 
@@ -12,11 +12,11 @@ use warnings;
 use strict;
 
 our $post = "i=ve&got=a&poison=i&ve=got&a=remedy";
-our $post_multipart = qq#--peoplecanfly\r\nContent-Disposition: form-data; #.
+our $post_multipart = qq#--peoplecanfly\r\nContent-Disposition: form-data; #   .
                       qq#name="astral"\r\n\r\nprojection\r\n--peoplecanfly\r\n#.
                       qq#Content-Disposition: form-data; name="text"; filename#.
-                      qq#="base_001.txt"\r\nContent-Type: text/plain\r\n\r\n#.
-                      qq#All your base are belong to us.\r\n--peoplecanfly--#.
+                      qq#="base_001.txt"\r\nContent-Type: text/plain\r\n\r\n#  .
+                      qq#All your base are belong to us.\r\n--peoplecanfly--#  .
                       qq#\r\n#;
 
 # ------------------------------------------------------------------------------

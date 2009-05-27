@@ -8,13 +8,15 @@ package Helix::Driver::Exceptions;
 #
 # ==============================================================================
 
-our $VERSION = "0.01"; # 2009-01-25 17:39:59
+use warnings;
+use strict;
+
+our $VERSION = "0.02"; # 2009-05-14 05:20:08
 
 use Helix::Core::Exception::Builder 
 (
-    "Error::Driver" => 
+    "HXError::Driver" => 
     {
-        "isa"   => "Error",
         "title" => "Driver error"
     },
 
@@ -30,10 +32,9 @@ Helix::Driver::Exceptions - Helix Framework driver exceptions.
 
 =head1 SYNOPSIS
 
-In error handler of your application (C<lib/Example/Controller/_Error.pm>) you
-could write:
+In error handler of your application (C<lib/Example/Error.pm>) you could write:
 
-    if ($e == Error::Driver)
+    if ($e eq "HXError::Driver")
     {
         print "Driver error occured!";
     }
@@ -44,12 +45,12 @@ could write:
 
 =head1 DESCRIPTION
 
-The I<Helix::Driver::Exceptions> package creates driver exceptions that are
-used by all types of drivers.
+The I<Helix::Driver::Exceptions> package creates driver exceptions that are used
+by all types of drivers.
 
 =head1 EXCEPTIONS
 
-=head2 Error::Driver
+=head2 HXError::Driver
 
 Base driver exception. All other driver exceptions subclass it.
 

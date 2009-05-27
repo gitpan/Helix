@@ -8,13 +8,13 @@ package Helix::Core::Config;
 #
 # ==============================================================================
 
-use Cwd qw/getcwd/;
+use FindBin;
 use warnings;
 use strict;
 
 our ($VERSION, $INSTANCE);
 
-$VERSION  = "0.01"; # 2008-10-17 23:26:51
+$VERSION  = "0.02"; # 2009-05-14 04:54:08
 $INSTANCE = undef;
 
 # ------------------------------------------------------------------------------
@@ -33,12 +33,13 @@ sub new
         # application settings
         "app" =>
         {
-            "title"    => undef,
-            "name"     => $name,
-            "version"  => $name->VERSION,
-            "root_dir" => getcwd(),
-            "type"     => $type,
-            "policy"   => "private"
+            "title"   => undef,
+            "name"    => $name,
+            "version" => $name->VERSION,
+            "root"    => $FindBin::Bin,
+            "type"    => $type,
+            "policy"  => "private",
+            "error"   => [ "Helix::Error", "error" ]
         },
 
         # CGI settings
@@ -48,7 +49,8 @@ sub new
             "tmp_dir"        => "/tmp/",
             "charset"        => "UTF-8",
             "content_type"   => "text/html",
-            "session_cookie" => "SESSIONID"
+            "session_cookie" => "SESSIONID",
+            "session_time"   => 3600
         },
 
         # driver list
@@ -85,7 +87,7 @@ Example application configuration (C<lib/Example/Config.pm>):
     package Example::Config;
     use base qw/Helix::Core::Config/;
 
-    our $VERSION  = "0.1";
+    our $VERSION  = "0.01";
 
     sub new
     {
@@ -99,9 +101,7 @@ Example application configuration (C<lib/Example/Config.pm>):
         $self->{"drivers"} = 
         [
             {
-                "class" => "Helix::Driver::Template::HTML",
-                "points" => [ "tpl" ],
-                "params" => [ "./templates/" ]
+                "class" => "Helix::Driver::Router::Basic"
             }
         ];
 
@@ -155,6 +155,13 @@ view any page, if page method has no C<Private> code attribute. In I<private>
 application only authorized users can view pages, if page method has no 
 C<Public> code attribute.
 
+=item * error
+
+Application error handler. Is an array reference, first item of array is a class
+name and the second item is a subroutine name of the error handler. By default,
+all application errors are handled by the L<Helix::Error> package. Obviously, 
+you will want to set your own error handler, so you should change this value.
+
 =back 
 
 =head2 CGI configuration section
@@ -185,6 +192,10 @@ General application content type. The default value is I<text/html>.
 
 Application session cookie name. The default value is I<SESSIONID>.
 
+=item * session_time
+
+Session lifetime (in seconds). The default value is 3600 (1 hour).
+
 =back
 
 =head2 Drivers configuration section
@@ -199,15 +210,10 @@ one driver configuration. Hashref items are:
 
 Driver class name. 
 
-=item * points
-
-Reference to array of mount points. If no points specified, driver will not be
-instantiated and you should do this manually later in controller code. 
-
 =item * params
 
 Reference to array of driver initialization parameters. This parameters will be
-sent to driver constructor during driver initialization. 
+sent to a driver constructor during driver initialization. 
 
 =back
 

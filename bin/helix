@@ -12,13 +12,6 @@ use Getopt::Long;
 use warnings;
 use strict;
 
-# constants
-use constant
-{
-    TYPE_CGI  => 0,
-    TYPE_FCGI => 1
-};
-
 &main;
 
 # ------------------------------------------------------------------------------
@@ -33,9 +26,6 @@ Usage: helix [options] <application_name>
 Generates code for application <application_name> with given options.
 
 Options:
-    -t --type       application type:
-                        cgi  - CGI application (default)
-                        fcgi - FastCGI application
     -v --verbose    verbose output
     -h --help       print this help
 
@@ -68,7 +58,7 @@ sub create_directory
     }
 
     shift @{ $app->{"skel"} };
-    $app->{"fail"} = 1 unless ($status);
+    $app->{"fail"} = 1 unless $status;
 }
 
 # ------------------------------------------------------------------------------
@@ -94,21 +84,9 @@ sub create_file
 
     $file =~ s/\[\$app_name\]/$app->{"name"}/g;
 
-    # check application type
-    if
-    (
-        ($file =~ /\.fcgi$/ && $app->{"type"} == TYPE_CGI)  ||
-        ($file =~ /\.cgi$/  && $app->{"type"} == TYPE_FCGI)
-    )
-    {
-        shift @{ $app->{"skel"} };
-        return;
-    }
-
     if ($status = open FILE, ">$file")
     {
         $time    = localtime;
-        $type    = $app->{"type"} == TYPE_CGI ? "cgi" : "fcgi";
         $content = shift @{ $app->{"skel"} }; 
         $content =~ s/\n$//;
 
@@ -130,7 +108,6 @@ sub create_file
             # text file
             $content =~ s/\[\$app_name\]/$app->{"name"}/g;
             $content =~ s/\[\$time\]/$time/g;
-            $content =~ s/\[\$type\]/$type/g;
             print FILE $content;
         }
 
@@ -146,7 +123,7 @@ sub create_file
         print "\n";
     }
 
-    $app->{"fail"} = 1 unless ($status);
+    $app->{"fail"} = 1 unless $status;
 }
 
 # ------------------------------------------------------------------------------
@@ -164,12 +141,10 @@ sub main
     (
         \%options, 
         "verbose|v", 
-        "type|t=s", 
         "help|h"
     );
 
     $app{"name"} = shift @ARGV || "";
-    $app{"type"} = ($options{"type"} && $options{"type"} eq "fcgi") ? TYPE_FCGI : TYPE_CGI;
     $app{"fail"} = 0;
 
     # check for mandatory options
@@ -179,27 +154,8 @@ sub main
         exit 0;
     }
 
-    # check if FCGI package is available
-    if ($app{"type"} == TYPE_FCGI)
-    {
-        eval "use FCGI";
-
-        if ($@)
-        {
-            print qq#FCGI package was not found on your computer, so your application WILL NOT WORK 
-until you install FCGI. 
-
-Create FastCGI application anyway? (yes/no) [yes]: #;
-
-            $answer = <>;
-            $app{"type"} = TYPE_CGI if ($answer =~ /^n/i);
-
-            print "\n";
-        }
-    }
-
     # proceed
-    print "Creating application \"$app{'name'}\" (".($app{"type"} == TYPE_FCGI ? "Fast" : "")."CGI)\n";
+    print "Creating application \"$app{'name'}\"\n";
 
     {
         # read entire data section
@@ -265,43 +221,47 @@ helix [options] <application_name>
 
 Options:
 
-    -t --type       application type:
-                        cgi  - CGI application (default)
-                        fcgi - FastCGI application
     -v --verbose    verbose output
     -h --help       print this help
 
 Examples:
 
-    helix -t cgi -v Example
-    helix -t fcgi AnotherExample
-    helix ThirdExample
+    helix -v Example
+    helix AnotherExample
 
 =head1 DESCRIPTION
 
 The I<helix> code generator will help you to create the application skeleton, so
 you won't need to make applications from scratch. It creates a simple example 
-application with 2 controllers (default page and error controllers) and a basic
-configuration without any drivers.
+application with one default controller and a basic configuration with 
+L<Helix::Driver::Router::Basic> as a router driver, so you need this package to
+be installed.
 
-The application name must consist of 1 or more alphanumeric characters.
+The application name must consist of one or more alphanumeric characters.
 
-Using the example application name I<Example> and I<CGI> application type, the 
-application directory will contain the following items:
+Using the example application name I<Example> the application directory will 
+contain the following items:
 
 =over 4
 
-=item cgi-bin/
+=item bin/
 
-A directory with executable contents. All your application scripts and modules
-are placed here. Contents of this directory should be moved into C<cgi-bin>
-directory on your web server.
+A directory with executable contents. All your application scripts are placed 
+here. Contents of this directory should be moved into C<cgi-bin> directory on 
+your web server.
 
 =over 4
 
 =item index.cgi
 
 CGI gateway of the application. All user requests will come through this file.
+
+=item index.fcgi
+
+FastCGI gateway of the application. You need to install the L<FCGI> module to 
+use this type of gateway.
+
+=back
 
 =item lib/
 
@@ -318,7 +278,7 @@ stuff and application version definition.
 =item Example/
 
 A directory with application configuration and other stuff used to interact with
-I<Helix Framework> .
+I<Helix Framework>.
 
 =over 4
 
@@ -333,15 +293,9 @@ A directory containing application controllers.
 
 =over 4
 
-=item _Error.pm
-
-An error controller of the application.
-
 =item Default.pm
 
 A default controller of the application.
-
-=back
 
 =back
 
@@ -353,19 +307,32 @@ A default controller of the application.
 
 A directory containing static data - images, stylesheets and javascript. 
 Contents of this directory should be moved into C<htdocs> (C<httpdocs>, 
-C<www>, C<wwwroot>) directory on your web server.
+C<www> or C<wwwroot>) directory of your web server.
 
 =over 4
 
-=item _htaccess
+=item config/
 
-I<Apache> configuration file. Contains I<mod_rewrite> rules for the application.
-Rename this file to C<.htaccess> while copying the application into web server 
-directories.
+Web-server configuration files.
+
+=over 4
+
+=item apache_cgi
+
+I<Apache> configuration file for CGI application. Contains I<mod_rewrite> rules 
+for the application. Rename this file to C<.htaccess> while deploying the 
+application to web server.
+
+=item apache_fcgi
+
+I<Apache> configuration file for FastCGI application. Rename this file to 
+C<.htaccess> while deploying the application to web server.
+
+=back
 
 =item img/
 
-A directory containing images for the application.
+A directory containing images for the example application.
 
 =over 4
 
@@ -383,37 +350,43 @@ I<Helix Framework> logo.
 
 =back
 
-The application directory for the I<FastCGI> application type will be the same,
-except the C<cgi-bin/index.cgi> file - in I<FastCGI> version there will be
-C<cgi-bin/index.fcgi> file instead.
-
 =head1 NOTES
 
 The application generated using this script will work only on I<Apache> web 
 server with I<mod_rewrite> module installed. Support of other servers will
 be added in future versions of this script.
 
-To make your application work perform the following actions:
+=head1 DEPLOYMENT
 
-1. copy the C<cgi-bin> directory contents into the C<cgi-bin> directory on 
-your web server.
+To deploy your application perform the following actions:
 
-2. set C<rwx-r-x-r-x> permissions on C<cgi-bin/index.cgi> (or 
-C<cgi-bin/index.fcgi>) file.
+1. Copy one of the files in C<bin> directory into the C<cgi-bin> directory of 
+your web server. For CGI application, you should copy a C<index.cgi>, for 
+FastCGI application - copy a C<index.fcgi> file.
 
-3. copy the C<static> directory contents into the C<htdocs> (C<httpdocs>, 
-C<www>, C<wwwroot>) directory on your web server.
+2. Set C<rwxr-xr-x> (755) permissions on file that you copied at first step
+(i.e. C<index.cgi> or C<index.fcgi>).
 
-4. rename the C<static/_htaccess> file into C<static/.htaccess>. Possibly, you
-will not need edit this file, but it may be needed if the C<cgi-bin> directory
-of your web server is located outside the web server's root (C<htdocs>, 
-C<httpdocs>, C<www>, C<wwwroot> or something like that).
+3. Copy the C<lib> directory to the same directory, where your web-server's 
+C<cgi-bin> is located. Actually, you can place this directory at your wish -
+everything you need then is to fix a path to this directory in file that you
+copied at first step (C<index.cgi> or C<index.fcgi>, line 11).
+
+4. Copy one of the C<config> directory files into the C<htdocs> 
+(C<httpdocs>, C<www> or C<wwwroot>) directory of your web server. Choose a file
+to copy according to file you copied at first step - if you want a CGI 
+application - you will need to copy C<apache_cgi> and if you want a FastCGI
+application - use C<apache_fcgi> instead. After copying, rename this file to
+C<.htaccess>.
+
+5. Copy the entire C<img> directory into the C<htdocs> (C<httpdocs>,
+C<www> or C<wwwroot>) directory of you web server. 
 
 =head1 SEE ALSO
 
 L<Helix>, L<Helix::Application>
 
-L<http://www.atma7.com/products/helix/> - official project web page.
+L<http://www.atma7.com/en/products/helix/> - official project web page.
 
 =head1 LICENSE
 
@@ -433,46 +406,44 @@ Copyright (c) 2009, Atma 7, L<http://www.atma7.com>
 __DATA__
 
 __dir:[$app_name]__
-__dir:[$app_name]/cgi-bin__
-__dir:[$app_name]/cgi-bin/lib__
-__dir:[$app_name]/cgi-bin/lib/[$app_name]__
-__dir:[$app_name]/cgi-bin/lib/[$app_name]/Controller__
+__dir:[$app_name]/bin__
+__dir:[$app_name]/lib__
+__dir:[$app_name]/lib/[$app_name]__
+__dir:[$app_name]/lib/[$app_name]/Controller__
 __dir:[$app_name]/static__
 __dir:[$app_name]/static/img__
+__dir:[$app_name]/static/config__
 
-__file:[$app_name]/cgi-bin/index.cgi__
+__file:[$app_name]/bin/index.cgi__
 #!/usr/bin/perl
 # ==============================================================================
 #
-#   Helix Framework
-#   Copyright (c) 2009, Atma 7
-#   ---
-#   index.cgi - CGI gateway
+#   [$app_name]
+#   bin/index.cgi - CGI gateway
 #
 # ==============================================================================
 
-use lib "./lib";
+use lib "../lib";
 use Helix::Debug;
 use [$app_name];
 use warnings;
 use strict;
 
 # application initialization
-my $app = [$app_name]->new([$app_name]->TYPE_CGI);
+my $app = [$app_name]->new;
+$app->start([$app_name]->TYPE_CGI);
 $app->handle_request;
 
-__file:[$app_name]/cgi-bin/index.fcgi__
+__file:[$app_name]/bin/index.fcgi__
 #!/usr/bin/perl
 # ==============================================================================
 #
-#   Helix Framework
-#   Copyright (c) 2009, Atma 7
-#   ---
-#   index.cgi - FCGI gateway
+#   [$app_name]
+#   bin/index.fcgi - FCGI gateway
 #
 # ==============================================================================
 
-use lib "./lib";
+use lib "../lib";
 use FCGI;
 use [$app_name];
 use warnings;
@@ -481,25 +452,60 @@ use strict;
 my ($rq, $app);
 
 $rq  = FCGI::Request;
-$app = [$app_name]->new([$app_name]->TYPE_FCGI);
+$app = [$app_name]->new;
+$app->start([$app_name]->TYPE_FCGI);
 
 while ($rq->Accept >= 0) 
 {
     $app->handle_request;
 }
 
-__file:[$app_name]/cgi-bin/lib/[$app_name].pm__
+__file:[$app_name]/lib/[$app_name].pm__
 package [$app_name];
+# ==============================================================================
+#
+#   [$app_name]
+#   lib/[$app_name].pm - application main class
+#
+# ==============================================================================
+
 use base qw/Helix::Application/;
 use warnings;
 use strict;
 
 our $VERSION = "0.01"; # [$time]
 
+# ------------------------------------------------------------------------------
+# start($type)
+# start the application
+# ------------------------------------------------------------------------------
+sub start
+{
+    my ($self, $type) = @_;
+    $self->SUPER::start($type);
+}
+
+# ------------------------------------------------------------------------------
+# handle_request()
+# handle HTTP request
+# ------------------------------------------------------------------------------
+sub handle_request
+{
+    my $self = shift;
+    $self->SUPER::handle_request;
+}
+
 1;
 
-__file:[$app_name]/cgi-bin/lib/[$app_name]/Config.pm__
+__file:[$app_name]/lib/[$app_name]/Config.pm__
 package [$app_name]::Config;
+# ==============================================================================
+#
+#   [$app_name]
+#   lib/[$app_name]/Config.pm - application configuration
+#
+# ==============================================================================
+
 use base qw/Helix::Core::Config/;
 use warnings;
 use strict;
@@ -519,14 +525,23 @@ sub new
     $self = $class->SUPER::new($name, $type);
     $self->{"app"}->{"title"} = "[$app_name]";
 
+    $self->{"drivers"} = [ { "class"  => "Helix::Driver::Router::Basic" } ];
+
     return $self;
 }
 
 1;
 
-__file:[$app_name]/cgi-bin/lib/[$app_name]/Controller/Default.pm__
+__file:[$app_name]/lib/[$app_name]/Controller/Default.pm__
 package [$app_name]::Controller::Default;
-use base qw/Helix::Core::Controller/;
+# ==============================================================================
+#
+#   [$app_name]
+#   lib/[$app_name]/Controller/Default.pm - default controller 
+#
+# ==============================================================================
+
+use base qw/Helix::Core::Attributes/;
 use Helix;
 use warnings;
 use strict;
@@ -537,16 +552,20 @@ use strict;
 # ------------------------------------------------------------------------------
 sub default : Default : Action(".*")
 {
-    my $r = Helix::Core::Registry->get_instance;
+    my ($r, $query, $app_name, $controller);
 
-    my $query = $r->{"router"}->{"query"} || "";
+    $r          = Helix::Core::Registry->get_instance;
+    $app_name   = $r->config->{"app"}->{"name"};
+    $query      = $r->cgi->get_query || "";
+    $controller = __PACKAGE__;
 
     if ($query eq "error")
     {
-        throw Error::Core::Router::NotFound($query);
+        throw HXError::Driver::Router::NotFound($query);
     }
 
-    $r->{"cgi"}->send_header;
+    $r->cgi->send_header;
+
     print << "EOT";
 <html>
     <head>
@@ -605,13 +624,13 @@ sub default : Default : Action(".*")
         <center>
             <div id="window">
                 <div id="header">
-                    <a href="http://www.atma7.com/products/helix/" title="Helix Framework"><img src="/img/logo.png" border="0"></a><br />
+                    <a href="http://www.atma7.com/en/products/helix/" title="Helix Framework"><img src="/img/logo.png" border="0"></a><br />
                     <span>version $Helix::VERSION</span>
                 </div>
                 <div id="content">
                     <h1><img src="/img/flag.png"> welcome</h1>
-                    <p>This is the <em>"/$query"</em> page of <b>$r->{'cfg'}->{'app'}->{'name'}</b> 
-                    application. It is handled by the <em>$r->{'router'}->{'controller'}</em> controller. 
+                    <p>This is the <em>"/$query"</em> page of <b>$app_name</b> 
+                    application. It is handled by the <em>$controller</em> controller. 
                     This controller has only one function with <code>Action(".*")</code> code attribute, 
                     so all user requests except <a href="/error/">/error</a> will lead to this page. The 
                     <a href="/error/">/error</a> request will cause the controller to throw the 
@@ -672,119 +691,29 @@ EOT
 
 1;
 
-__file:[$app_name]/cgi-bin/lib/[$app_name]/Controller/_Error.pm__
-package [$app_name]::Controller::_Error;
-use base qw/Helix::Core::Controller/;
-use Helix;
-use warnings;
-use strict;
+__file:[$app_name]/static/config/apache_cgi__
+# ==============================================================================
+#
+#   [$app_name]
+#   static/config/apache_cgi - Apache configuration file for CGI application
+#
+# ==============================================================================
 
-# ------------------------------------------------------------------------------
-# error($msg)
-# error handler
-# ------------------------------------------------------------------------------
-sub error : Error
-{
-    my ($r, $msg);
-    
-    $msg = shift;
-    $r   = Helix::Core::Registry->get_instance;
-
-    my $query = $r->{"router"}->{"query"} || "";
-    my $type  = ref $msg;
-
-    $r->{"cgi"}->send_header();
-    print << "EOT";
-<html>
-    <head>
-        <title>Helix Framework</title>
-        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
-    </head>
-    <body>
-        <style type="text/css">
-            body {
-                margin: 0px;
-                padding: 0px;
-                text-align: center;
-                background-color: #FFF;
-            }
-
-            div#window {
-                width: 800px;
-                height: 100%;
-                background-color: #F0F0F0;
-            }
-
-            div#header {
-                padding: 10px 10px 10px 10px;
-                height: 88px;
-                text-align: left;
-                -moz-box-sizing: border-box;
-                background-color: #FFF;
-            }
-
-            div#header span {
-                color: #909090;
-                font-family: Verdana, Tahoma;
-                font-size: 7pt;
-                margin-left: 3px;
-            }
-
-            div#content {
-                width: 100%;
-                font-size: 9pt;
-                font-family: Verdana, Tahoma;
-                text-align: left;
-                color: #606060;
-                padding: 15px 15px 15px 15px;
-                -moz-box-sizing: border-box;
-            }
-
-            h1 {
-                font-size: 16pt;
-                margin-top: 0;
-                text-transform: lowercase;
-                font-weight: normal;
-                border-bottom: 1px dashed #606060;
-                padding-bottom: 5px;
-            }
-        </style>
-        <center>
-            <div id="window">
-                <div id="header">
-                    <a href="http://www.atma7.com/products/helix/" title="Helix Framework"><img src="/img/logo.png" border="0"></a><br />
-                    <span>version $Helix::VERSION</span>
-                </div>
-                <div id="content">
-                    <h1><img src="/img/flag.png"> error</h1>
-                    <p>As you can see, something weird happened while you tried to access 
-                    the <em>"/$query"</em> page. This page is handled by the 
-                    <em>$r->{'router'}->{'controller'}</em> controller, which is responsible for 
-                    application exception and error handling. So, let's see what happened.</p>
-
-                    <ul>
-                        <li>Exception type: <em>$type</em></li>
-                        <li>Exception string (stringified exception object): <em>$msg</em></li>
-                        <li>Exception message: <em>$msg->{'message'}</em></li>
-                        <li>File, in which exception was thrown: <em>$msg->{'file'}</em></li>
-                        <li>File line, at which exception was thrown: <em>$msg->{'line'}</em></li>
-                    </ul>
-
-                    <br /><br />
-                </div>
-            </div>
-        </center>
-    </body>
-</html>
-EOT
-}
-
-1;
-
-__file:[$app_name]/static/_htaccess__
 RewriteEngine on
 RewriteCond %{REQUEST_FILENAME} !-f
-RewriteRule ^(.*)$ cgi-bin/index.[$type]?query=$1 [L,QSA]
+RewriteRule ^(.*)$ cgi-bin/index.cgi?query=$1 [L,QSA]
+
+__file:[$app_name]/static/config/apache_fcgi__
+# ==============================================================================
+#
+#   [$app_name]
+#   static/config/apache_fcgi - Apache configuration file for FCGI application
+#
+# ==============================================================================
+
+RewriteEngine on
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^(.*)$ cgi-bin/index.fcgi?query=$1 [L,QSA]
 
 __file:hex:[$app_name]/static/img/flag.png__
 89504E470D0A1A0A0000000D4948445200000010000000100804000000B5FA37EA00000001735247

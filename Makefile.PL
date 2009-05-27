@@ -1,4 +1,4 @@
-#!/usr/bin/perl -w
+#!/usr/bin/perl
 # ==============================================================================
 #
 #   Helix Framework
@@ -10,6 +10,8 @@
 
 use 5.008008;
 use ExtUtils::MakeMaker;
+use warnings;
+use strict;
 
 WriteMakefile
 (
@@ -21,15 +23,14 @@ WriteMakefile
 
     "PREREQ_PM"     => 
     {
-        "Cwd"          => 0,
-        "Exporter"     => 0,
-        "Fcntl"        => 0,
-        "FindBin"      => 0,
-        "Getopt::Long" => 0,
-        "List::Util"   => 0,
-        "POSIX"        => 0
+        "DBI"                   => 0,
+        "Exporter"              => 0,
+        "FindBin"               => 0,
+        "Getopt::Long"          => 0,
+        "List::Util"            => 0,
+        "Class::Accessor::Fast" => 0
     }, 
 
-    "test"          => { "TESTS" => "t/*.t" },
+    "test"          => { "TESTS" => "t/*.t t/core/*.t t/driver/*.t" },
 );
 

@@ -11,7 +11,7 @@ package Helix::Core::Exception::Builder;
 use warnings;
 use strict;
 
-our $VERSION = "0.01"; # 2008-09-29 01:09:22
+our $VERSION = "0.02"; # 2009-05-12 06:24:56
 
 # ------------------------------------------------------------------------------
 # import($class, $data)
@@ -100,9 +100,8 @@ Exception message.
 
 =back
 
-If no I<isa> information is specified, 
-L<Helix::Core::Exception> will be used as a base 
-exception class.
+If no I<isa> information is specified, L<Helix::Core::Exception> will be used 
+as a base exception class.
 
 =head1 SEE ALSO
 

@@ -1,22 +1,19 @@
-package Helix::Driver::Template::Generic;
+package Helix::Driver::Template;
 # ==============================================================================
 #
 #   Helix Framework
 #   Copyright (c) 2009, Atma 7
 #   ---
-#   Helix/Driver/Template/Generic.pm - generic template driver
+#   Helix/Driver/Template.pm - generic template driver
 #
 # ==============================================================================
 
-use Helix::Core::Driver::Types;
+use base qw/Helix::Driver/;
 use Helix::Driver::Template::Exceptions;
 use warnings;
 use strict;
 
-our $VERSION = "0.01"; # 2008-10-18 23:58:40
-
-# driver type
-use constant DRIVER_TYPE => DT_TEMPLATE;
+our $VERSION = "0.02"; # 2009-05-14 05:31:44
 
 # ------------------------------------------------------------------------------
 # \% new()
@@ -40,7 +37,7 @@ sub new
     bless $self, $class;
 
     # check if template directory exists
-    throw Error::Driver::Template::Directory($self->{"templates_dir"}) if (!-d $self->{"templates_dir"});
+    throw HXError::Driver::Template::Directory($self->{"templates_dir"}) if (!-d $self->{"templates_dir"});
 
     return $self;
 }
@@ -66,7 +63,7 @@ sub set
 # ------------------------------------------------------------------------------
 sub parse
 {
-    throw Error::Core::AbstractMethod;
+    throw HXError::Core::AbstractMethod;
 }
 
 # ------------------------------------------------------------------------------
@@ -75,7 +72,7 @@ sub parse
 # ------------------------------------------------------------------------------
 sub render
 {
-    throw Error::Core::AbstractMethod;
+    throw HXError::Core::AbstractMethod;
 }
 
 1;
@@ -84,37 +81,33 @@ __END__
 
 =head1 NAME
 
-Helix::Driver::Template::Generic - Helix Framework generic template driver.
+Helix::Driver::Template - Helix Framework generic template driver.
 
 =head1 SYNOPSIS
 
 Example template driver:
 
-    package Helix::Driver::Template::Example;
-    use base qw/Helix::Driver::Template::Generic/;
-
-    use constant DRIVER_TYPE => DT_TEMPLATE_EXAMPLE;
+    package MyApp::Driver::Template;
+    use base qw/Helix::Driver::Template/;
 
     sub parse
     {
         my ($self, $tpl) = @_;
-        throw Error::Driver::Template::Open("This is just an example!");
+        throw HXError::Driver::Template::Open("This is just an example!");
     }
 
     sub render
     {
         my $self = shift;
-        throw Error::Driver::Template::Open("This is just an example!");
+        throw HXError::Driver::Template::Open("This is just an example!");
     }
 
 =head1 DESCRIPTION
 
-The I<Helix::Driver::Template::Generic> is a generic template driver for 
+The I<Helix::Driver::Template> is a generic template driver for 
 I<Helix Framework>. It declares some functions that are common for all driver 
 types and some abstract methods, that I<must> be overloaded in ancestor classes.
 All template drivers should subclass this package.
-
-Driver type: C<DT_TEMPLATE>.
 
 =head1 METHODS
 

@@ -8,12 +8,15 @@ package Helix::Core::Registry;
 #
 # ==============================================================================
 
+use base qw/Class::Accessor::Fast/;
 use warnings;
 use strict;
 
+__PACKAGE__->mk_accessors(qw/cgi config loader/);
+
 our ($VERSION, $INSTANCE);
 
-$VERSION  = "0.01"; # 2008-10-17 23:23:16
+$VERSION  = "0.02"; # 2009-05-12 06:28:11
 $INSTANCE = undef;
 
 # ------------------------------------------------------------------------------
@@ -41,6 +44,16 @@ sub get_instance
     return $INSTANCE;
 }
 
+# ------------------------------------------------------------------------------
+# free()
+# free variables
+# ------------------------------------------------------------------------------
+sub free
+{
+    delete $_[0]->{"cgi"};
+    delete $_[0]->{"loader"};
+}
+
 1;
 
 __END__
@@ -54,21 +67,45 @@ Helix::Core::Registry - global data storage for Helix Framework.
 Somewhere in application controllers:
 
     my $r = Helix::Core::Registry->get_instance;
-    $r->{"cgi"}->send_header;
+    $r->cgi->send_header;
 
-    my $tpl = $r->{"driver"}->object(DT_TEMPLATE);
+    my $tpl = $r->loader->get_object("Helix::Driver::Template");
     $tpl->parse("index.tpl");
     $tpl->render;
 
 =head1 DESCRIPTION
 
-The I<Helix::Core::Registry> class creates a global data storage hash for the
+The I<Helix::Core::Registry> class creates a global data storage object for the
 whole I<Helix Framework> application. It is instantiated and filled in during
 applicaton initialization and request processing flow. You can use it anywhere
 in application.
 
-In other modules' documentation examples I<Helix::Core::Registry> is referred as
-C<$r> variable.
+In I<Helix Framework> documentation examples I<Helix::Core::Registry> is 
+referred as C<$r> variable.
+
+=head2 Mount points
+
+During initialization and request handling application mounts each vital object
+to system registry to allow other application parts to use them later. This is the
+list of all mount points, that are created by I<Helix::Application>:
+
+=over 4
+
+=item $r->config
+
+Application configuration object (see 
+L<Helix::Application/Load application configuration> and L<Helix::Core::Config> 
+module documentation).
+
+=item $r->cgi
+
+CGI object (see L<Helix::Core::CGI> for more information).
+
+=item $r->loader
+
+Driver loader object (see L<Helix::Core::Loader> documentation).
+
+=back
 
 =head1 METHODS
 
@@ -79,6 +116,10 @@ Class constructor. Creates global data storage.
 =head2 get_instance()
 
 Returns registry instance. Class must be instantiated first.
+
+=head2 free()
+
+Destroys L<Helix::Core::CGI> and L<Helix::Core::Loader> objects.
 
 =head1 SEE ALSO
 

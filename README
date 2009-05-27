@@ -1,4 +1,4 @@
-Helix Framework, version 0.01
+Helix Framework, version 0.02
 =============================
 
 The Helix Framework is intended to turn a headache of web user interface 
@@ -7,7 +7,7 @@ to ease the creation of various web-based backends and systems such as project
 management systems, customer relationship management systems, online payment 
 services and so on. You can use this framework for web site creation too, but it
 isn't recommended - try to use another powerful tools, that are intended for 
-this task (for example, Typo3 CMF, Moveable Type or, say, Wordpress).
+this task (for example, Typo3 CMF, Movable Type or, say, Wordpress).
 
 INSTALLATION
 
@@ -20,19 +20,14 @@ To install the framework type the following:
 
 DEPENDENCIES
 
-This module requires these other modules and libraries:
+This package requires these other modules and libraries:
 
-    Cwd
     DBI
     Exporter
-    Fcntl
     FindBin
     Getopt::Long
     List::Util
-    POSIX
-
-All required modules are core modules, except DBI. You need DBI to be 
-installed only if you plan to use database in your application.
+    Class::Accessor::Fast
 
 LICENCE
 

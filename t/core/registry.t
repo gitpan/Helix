@@ -4,15 +4,13 @@
 #   Helix Framework
 #   Copyright (c) 2009, Atma 7
 #   ---
-#   t/application.t - application tests
+#   t/core/registry.t - registry tests
 #
 # ==============================================================================  
 
-use Test::More tests => 5;
+use Test::More tests => 6;
 use warnings;
 use strict;
-
-my $app;
 
 # ------------------------------------------------------------------------------
 # BEGIN()
@@ -20,16 +18,14 @@ my $app;
 # ------------------------------------------------------------------------------
 BEGIN
 {
-    use_ok("Helix::Application");
+    use_ok("Helix::Core::Registry");
 }
 
 # methods
-ok( Helix::Application->can("start"),          "start method"          );
-ok( Helix::Application->can("handle_request"), "handle_request method" );
+ok( Helix::Core::Registry->can("get_instance"), "get_instance method" );
+ok( Helix::Core::Registry->can("free"),         "free method"         );
 
-$app = Helix::Application->new;
-
-# application types
-is( $app->TYPE_CGI,  0, "CGI application type"  );
-is( $app->TYPE_FCGI, 1, "FCGI application type" );
-
+# accessors
+ok( Helix::Core::Registry->can("cgi"),          "cgi accessor"        );
+ok( Helix::Core::Registry->can("config"),       "config accessor"     );
+ok( Helix::Core::Registry->can("loader"),       "loader accessor"     );

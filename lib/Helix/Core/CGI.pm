@@ -11,7 +11,7 @@ package Helix::Core::CGI;
 use warnings;
 use strict;
 
-our $VERSION  = "0.01"; # 2008-10-17 23:26:26
+our $VERSION  = "0.02"; # 2009-05-14 04:54:47
 
 # ------------------------------------------------------------------------------
 # \% new($postmax, $tmpdir)
@@ -31,6 +31,7 @@ sub new
         "max_post_size"  => $cfg->{"cgi"}->{"max_post_size"}  || 6553600,
         "tmp_dir"        => $cfg->{"cgi"}->{"tmp_dir"}        || "/tmp/",
         "session_cookie" => $cfg->{"cgi"}->{"session_cookie"} || "SESSIONID",
+        "session_time"   => $cfg->{"cgi"}->{"session_time"}   || 3600,
  
         # input data
         "cookie" => {},
@@ -87,14 +88,14 @@ sub _init
     if ($ENV{"REQUEST_METHOD"} && uc($ENV{"REQUEST_METHOD"}) eq "POST")
     {
         # check POST size
-        if ($ENV{"CONTENT_LENGTH"} > $self->{"max_post_size"}) { throw Error::Core::CGI::MaxPost }
+        if ($ENV{"CONTENT_LENGTH"} > $self->{"max_post_size"}) { throw HXError::Core::CGI::MaxPost }
 
         # multipart/form-data
         if ($ENV{"CONTENT_TYPE"} =~ /^multipart\/form-data/) 
         {
             # get boundary marker
             ($boundary) = $ENV{"CONTENT_TYPE"} =~ /boundary="?(\S[^"]+)"?$/;
-            throw Error::Core::CGI::InvalidPOST unless ($boundary);
+            throw HXError::Core::CGI::InvalidPOST unless ($boundary);
 
             $buffer = "";
             $stage = 0;
@@ -137,7 +138,7 @@ sub _init
                         {
                             # file upload
                             $filename = $self->{"tmp_dir"}.$self->generate_string;
-                            open $fh, ">$filename" || throw Error::Core::CGI::FileSave;
+                            open $fh, ">$filename" || throw HXError::Core::CGI::FileSave;
 
                             # file variables
                             $self->{"file"}->{$key} =
@@ -173,7 +174,7 @@ sub _init
                 # empty line
                 ($stage == 3) && do { $stage = 0; next };
 
-                throw Error::Core::CGI::InvalidPOST($_.$stage);
+                throw HXError::Core::CGI::InvalidPOST($_.$stage);
             }
         } 
         else 
@@ -201,15 +202,11 @@ sub _init
     }
 
     # session
-    if (($sid = $self->get_cookie($self->{"session_cookie"})) && -f $self->{"tmp_dir"}.$sid) 
+    if ($sid = $self->get_cookie($self->{"session_cookie"}))
     {
        $filename = $self->{"tmp_dir"}.$sid;
 
-       if (time - (stat $filename)[9] > 3600) 
-       {
-           unlink $filename;
-       } 
-       else 
+       if ((-f $filename) && (time - (stat $filename)[9] < $self->{"session_time"}))
        {
            open FILE, $filename; 
 
@@ -222,6 +219,13 @@ sub _init
 
            close FILE;
            $self->{"session"}->{"id"} = $sid;
+
+           # touch file
+           utime undef, undef, ($filename);
+       }
+       else
+       {
+           $self->destroy_session;
        }
     }
 
@@ -264,6 +268,29 @@ sub post
     my ($self, $name) = @_;
  
     return defined $name ? $self->{"post"}->{$name} : $self->{"post"};
+}
+
+# ------------------------------------------------------------------------------
+# $ get_query()
+# get query
+# ------------------------------------------------------------------------------
+sub get_query
+{
+    my ($self, $query, $query_len);
+
+    $self  = shift;
+    $query = $self->get("query");
+    
+    # query may be empty
+    if ($query) 
+    {
+        $query_len = length($query);
+
+        if ( index($query, "/") == 0)              { substr($query, 0, 1)              = "" }
+        if (rindex($query, "/") == $query_len - 1) { substr($query, $query_len - 1, 1) = "" }
+    }
+
+    return $query;
 }
 
 # ------------------------------------------------------------------------------
@@ -328,7 +355,7 @@ sub set_cookie
 {
     my ($self, $name, $value, $expires, $path, $domain) = @_;
 
-    if ($self->is_header_sent)
+    if ($self->header_sent)
     {
         warn "Cannot set cookie - header is already sent";
         return;
@@ -338,7 +365,7 @@ sub set_cookie
     $path    ||= "/";
     $domain  ||= "";
 
-    # compute cookie's expire date
+    # compute cookie's expiry date
     if ($expires) 
     {
         $expires = gmtime(time + $expires);
@@ -380,10 +407,10 @@ sub generate_string
 }
 
 # ------------------------------------------------------------------------------
-# init_session()
-# session initialization
+# start_session()
+# session start
 # ------------------------------------------------------------------------------
-sub init_session
+sub start_session
 {
     my $self = shift;
 
@@ -412,6 +439,15 @@ sub destroy_session
 }
 
 # ------------------------------------------------------------------------------
+# session_started()
+# check if session exists
+# ------------------------------------------------------------------------------
+sub session_started()
+{
+    return defined $_[0]->{"session"}->{"id"};
+}
+
+# ------------------------------------------------------------------------------
 # set_session($key, $value)
 # set session parameter
 # ------------------------------------------------------------------------------
@@ -419,9 +455,7 @@ sub set_session
 {
     my ($self, $key, $value) = @_;
 
-    throw Error::Core::CGI::NoSession if (!defined $self->{"session"}->{"id"});
-    
-    $self->{"session"}->{"params"}->{$key} = $value;
+    $self->{"session"}->{"params"}->{$key} = $value if $self->session_started;
 }
 
 # ------------------------------------------------------------------------------
@@ -432,27 +466,16 @@ sub get_session
 {
     my ($self, $key) = @_;
 
-    throw Error::Core::CGI::NoSession if (!defined $self->{"session"}->{"id"});
-
-    return $self->{"session"}->{"params"}->{$key};
+    return $self->session_started ? $self->{"session"}->{"params"}->{$key} : undef;
 }
 
 # ------------------------------------------------------------------------------
-# is_header_sent()
+# header_sent()
 # check if header is sent
 # ------------------------------------------------------------------------------
-sub is_header_sent
+sub header_sent
 {
-    my $cfg = Helix::Core::Config->get_instance;
-
-    if ($cfg->{"app"}->{"type"} == Helix::Application->TYPE_CGI)
-    {
-        return tell STDOUT ? 1 : 0;
-    }
-    elsif ($cfg->{"app"}->{"type"} == Helix::Application->TYPE_FCGI)
-    {
-        return $_[0]->{"header"}->{"is_sent"};
-    }
+    return $_[0]->{"header"}->{"is_sent"};
 }
 
 # ------------------------------------------------------------------------------
@@ -465,6 +488,22 @@ sub add_header
 }
 
 # ------------------------------------------------------------------------------
+# redirect($to)
+# redirect to new location
+# ------------------------------------------------------------------------------
+sub redirect
+{
+    my ($self, $to) = @_;
+
+    if ($to)
+    {
+        $self->add_header("Status: 302 Found");
+        $self->add_header("Location: $to");
+    }
+    $self->send_header;
+}
+
+# ------------------------------------------------------------------------------
 # send_header()
 # send header
 # ------------------------------------------------------------------------------
@@ -474,7 +513,7 @@ sub send_header
 
     $self = shift;
 
-    if ($self->is_header_sent) 
+    if ($self->header_sent) 
     {
         warn "Cannot send header - header is already sent";
         return;
@@ -496,9 +535,9 @@ sub send_header
     {
         $buffer .= "Set-Cookie: $_->{'name'}=$_->{'value'};";
 
-        if ($_->{"path"})    {$buffer .= " path=$_->{'path'};"}
-        if ($_->{"expires"}) {$buffer .= " expires=$_->{'expires'};"}
-        if ($_->{"domain"})  {$buffer .= " domain=$_->{'domain'};"}
+        if ( $_->{"path"}    ) { $buffer .= " path=$_->{'path'};"       }
+        if ( $_->{"expires"} ) { $buffer .= " expires=$_->{'expires'};" }
+        if ( $_->{"domain"}  ) { $buffer .= " domain=$_->{'domain'};"   }
 
         $buffer .= "\n";
     }
@@ -518,7 +557,6 @@ sub send_header
         close FILE;
     }
 
-    # FCGI hack
     $self->{"header"}->{"is_sent"} = 1;
 
     print $buffer;
@@ -577,6 +615,10 @@ returns a hashref with all GET parameters.
 Returns a value of the POST parameter. If C<$name> of variable is not given,
 returns a hashref with all POST parameters.
 
+=head2 get_query()
+
+Returns a cleaned query string.
+
 =head2 get_file($name)
 
 Returns a hashref with uploaded file data:
@@ -626,7 +668,7 @@ expired.
 Returns a randomly-generated string with. C<$len> - length of the string to be
 generated. If C<$len> is not specified, 32-character string will be generated. 
 
-=head2 init_session()
+=head2 start_session()
 
 Initialize user session. Generates a magic session ID and sets a cookie with
 this value to user.
@@ -634,6 +676,10 @@ this value to user.
 =head2 destroy_session()
 
 Destroys the session, if any.
+
+=head2 session_started()
+
+Checks if session was started.
 
 =head2 set_session($key, $value)
 
@@ -643,13 +689,17 @@ Sets session parameter C<$key> with the given C<$value>.
 
 Returns C<$key> session parameter value.
 
-=head2 is_header_sent()
+=head2 header_sent()
 
 Checks if HTTP header is already sent. Returns I<1> or I<0>.
 
 =head2 add_header($header)
 
 Adds user-defined header string C<$header>.
+
+=head2 redirect($to)
+
+Sends a redirect header to web browser.
 
 =head2 send_header()
 

@@ -8,7 +8,14 @@
 #
 # ==============================================================================  
 
-use Test::More skip_all => "not implemented";
+use Test::More tests => 2;
 use warnings;
 use strict;
+
+BEGIN
+{
+    use_ok("Helix");
+}
+
+ok( $Helix::VERSION, "version check" );
 

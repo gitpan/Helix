@@ -8,31 +8,34 @@ package Helix::Driver::Template::Exceptions;
 #
 # ==============================================================================
 
-our $VERSION = "0.01"; # 2009-01-25 17:41:24
+use warnings;
+use strict;
+
+our $VERSION = "0.02"; # 2009-05-14 05:44:54
 
 use Helix::Core::Exception::Builder 
 (
-    "Error::Driver::Template" => 
+    "HXError::Driver::Template" => 
     {
-        "isa"   => "Error::Driver",
+        "isa"   => "HXError::Driver",
         "title" => "Template driver error"
     },
 
-    "Error::Driver::Template::Directory" =>
+    "HXError::Driver::Template::Directory" =>
     {
-        "isa"   => "Error::Driver::Template",
+        "isa"   => "HXError::Driver::Template",
         "title" => "Cannot open template directory"
     },
 
-    "Error::Driver::Template::Open" =>
+    "HXError::Driver::Template::Open" =>
     {
-        "isa"   => "Error::Driver::Template",
+        "isa"   => "HXError::Driver::Template",
         "title" => "Cannot open template file"
     },
 
-    "Error::Driver::Template::NotParsed" =>
+    "HXError::Driver::Template::NotParsed" =>
     {
-        "isa"   => "Error::Driver::Template",
+        "isa"   => "HXError::Driver::Template",
         "title" => "Template must be parsed before rendering"
     }
 );
@@ -47,10 +50,9 @@ Helix::Driver::Template::Exceptions - Helix Framework template driver exceptions
 
 =head1 SYNOPSIS
 
-In error handler of your application (C<lib/Example/Controller/_Error.pm>) you
-could write:
+In error handler of your application (C<lib/Example/Error.pm>) you could write:
 
-    if ($e == Error::Driver::Template::Open)
+    if ($e eq "Error::Driver::Template::Open")
     {
         print "Cannot open template file!";
     }

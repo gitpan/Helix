@@ -8,13 +8,16 @@ package Helix::Driver::User::Exceptions;
 #
 # ==============================================================================
 
-our $VERSION = "0.01"; # 2009-01-25 17:41:49
+use warnings;
+use strict;
+
+our $VERSION = "0.02"; # 2009-05-14 05:46:01
 
 use Helix::Core::Exception::Builder 
 (
-    "Error::Driver::User" => 
+    "HXError::Driver::User" => 
     {
-        "isa"   => "Error::Driver",
+        "isa"   => "HXError::Driver",
         "title" => "User driver exceptions"
     }
 );
@@ -29,10 +32,10 @@ Helix::Driver::User::Exceptions - Helix Framework user driver exceptions.
 
 =head1 SYNOPSIS
 
-In error handler of your application (C<lib/Example/Controller/_Error.pm>) you
+In error handler of your application (C<lib/Example/Error.pm>) you
 could write:
 
-    if ($e == Error::Driver::User)
+    if ($e eq "Error::Driver::User")
     {
         print "User driver failed!";
     }

@@ -1,23 +1,20 @@
-package Helix::Driver::DB::Generic;
+package Helix::Driver::DB;
 # ==============================================================================
 #
 #   Helix Framework
 #   Copyright (c) 2009, Atma 7
 #   ---
-#   Helix/Driver/DB/Generic.pm - generic database driver
+#   Helix/Driver/DB.pm - generic database driver
 #
 # ==============================================================================
 
-use Helix::Core::Driver::Types;
+use base qw/Helix::Driver/;
 use Helix::Driver::DB::Exceptions;
 use DBI;
 use warnings;
 use strict;
 
-our $VERSION = "0.01"; # 2008-11-04 16:22:52
-
-# driver type
-use constant DRIVER_TYPE => DT_DATABASE;
+our $VERSION = "0.02"; # 2009-05-14 05:18:37
 
 # ------------------------------------------------------------------------------
 # \% new($dbd, $db, $user, $password, $host, $port, $cfg)
@@ -30,18 +27,18 @@ sub new
     ($class, $dbd, $db, $user, $password, $host, $port, $cfg) = @_;
 
     # class attributes
-    $self  = 
+    $self = 
     {
         # connection settings
         "dbd"         => $dbd,
         "database"    => $db,
         "user"        => $user,
         "password"    => $password,
-        "host"        => $host || "localhost",
-        "port"        => $port || 5432,
+        "host"        => $host,
+        "port"        => $port,
 
         # other settings
-        "auto_fetch"  => $cfg && exists $cfg->{"auto_fetch"}  ? $cfg->{"auto_fetch"}  : 1,
+        "auto_fetch"  => $cfg && exists $cfg->{"auto_fetch"}  ? $cfg->{"auto_fetch"}  : 0,
         "auto_commit" => $cfg && exists $cfg->{"auto_commit"} ? $cfg->{"auto_commit"} : 1,
 
         # handles
@@ -51,7 +48,7 @@ sub new
         # data
         "query"       => undef,
         "query_count" => 0,
-        "row_count"   => 0,
+        "rows"        => 0,
         "dataset"     => []
     };
 
@@ -88,7 +85,7 @@ sub _init
         );
     }; 
 
-    throw Error::Driver::DB::Connect($@) if ($@);
+    throw HXError::Driver::DB::Connect($@) if ($@);
 }
 
 # ------------------------------------------------------------------------------
@@ -103,20 +100,22 @@ sub execute
 
     eval 
     { 
-        $self->{"query"} = $query;
-        $self->{"query_count"}++;
-        $self->{"row_count"} = 0;
         $self->free;
 
-        # query execution
-        $self->{"sth"} = $self->{"dbh"}->prepare($query);
-        $self->{"sth"}->execute(@params);
-        $self->fetch_all if ($self->{"auto_fetch"});
+        $self->{"query"} = $query;
+        $self->{"query_count"}++;
+
+        $self->{"sth"}  = $self->{"dbh"}->prepare($query);
+        $self->{"rows"} = $self->{"sth"}->execute(@params);
     };
 
-    throw Error::Driver::DB::SQL($query) if ($@);
+    throw HXError::Driver::DB::SQL($query) if ($@);
 
-    return $self->{"dataset"} if ($self->{"auto_fetch"});
+    if ($self->{"auto_fetch"})
+    {
+        $self->_fetch_all;
+        return $self->{"dataset"};
+    }
 }
 
 # ------------------------------------------------------------------------------
@@ -131,16 +130,19 @@ sub execute_prepared
 
     eval
     {
-        $self->{"query_count"}++;
-        $self->{"dataset"} = [] if ($self->{"dataset"});
+        $self->free;
 
-        $self->{"sth"}->execute(@params);
-        $self->fetch_all if ($self->{"auto_fetch"});
+        $self->{"query_count"}++;
+        $self->{"rows"} = $self->{"sth"}->execute(@params);
     };
 
-    throw Error::Driver::DB::SQL($self->{"query"}) if ($@);
+    throw HXError::Driver::DB::SQL($self->{"query"}) if ($@);
 
-    return $self->{"dataset"} if ($self->{"auto_fetch"});
+    if ($self->{"auto_fetch"})
+    {
+        $self->_fetch_all;
+        return $self->{"dataset"};
+    }
 }
 
 # ------------------------------------------------------------------------------
@@ -153,10 +155,26 @@ sub fetch
     
     $self = shift;
 
+    throw HXError::Driver::DB::AlreadyFetched if ($self->{"auto_fetch"});
     $row  = $self->{"sth"}->fetchrow_hashref;
-    push @{ $self->{"dataset"} }, $row if ($row); 
 
     return $row;
+}
+
+# ------------------------------------------------------------------------------
+# _fetch_all()
+# private version of fetch all results
+# ------------------------------------------------------------------------------
+sub _fetch_all
+{
+    my ($self, $row);
+
+    $self = shift;
+
+    while ($row = $self->{"sth"}->fetchrow_hashref)
+    {
+        push @{ $self->{"dataset"} }, $row;
+    }
 }
 
 # ------------------------------------------------------------------------------
@@ -167,7 +185,8 @@ sub fetch_all
 {
     my $self = shift;
 
-    while ($self->fetch) {};
+    throw HXError::Driver::DB::AlreadyFetched if ($self->{"auto_fetch"});
+    $self->_fetch_all;
 
     return $self->{"dataset"};
 }
@@ -195,7 +214,7 @@ sub free
 # ------------------------------------------------------------------------------
 sub call
 {
-    throw Error::Core::AbstractMethod;
+    throw HXError::Core::AbstractMethod;
 }
 
 # ------------------------------------------------------------------------------
@@ -213,16 +232,14 @@ __END__
 
 =head1 NAME
 
-Helix::Driver::DB::Generic - Helix Framework generic database driver.
+Helix::Driver::DB - Helix Framework generic database driver.
 
 =head1 SYNOPSIS
 
 Example database driver:
 
     package Helix::Driver::DB::Example;
-    use base qw/Helix::Driver::DB::Generic/;
-
-    use constant DRIVER_TYPE => DT_DATABASE_EXAMPLE; 
+    use base qw/Helix::Driver::DB/;
 
     sub new
     {
@@ -239,7 +256,7 @@ Example database driver:
         my ($self, $function, @params, $query);
 
         ($self, $function, @params) = @_;
-        throw Error::Driver::DB::SQL($function);
+        throw HXError::Driver::DB::SQL($function);
 
         # never will reach here
         return $self->execute($query, @params);
@@ -247,7 +264,7 @@ Example database driver:
 
 =head1 DESCRIPTION
 
-The I<Helix::Driver::DB::Generic> is a generic database driver for 
+The I<Helix::Driver::DB> is a generic database driver for 
 I<Helix Framework>. It declares some functions that are common for all driver 
 types and some abstract methods, that I<must> be overloaded in ancestor classes.
 All database drivers should subclass this package.
@@ -258,8 +275,6 @@ syntax differences between different DBMSs less visible.
 
 To use database drivers you must have L<DBI> and needed L<DBD> packages 
 installed.
-
-Driver type: C<DT_DATABASE>.
 
 =head1 METHODS
 
@@ -277,11 +292,11 @@ hashref:
 =item auto_fetch
 
 Automatically fetch all query results right after query execution. Default value
-is I<1>.
+is C<0>.
 
 =item auto_commit
 
-Automatically commit transaction after each SQL query. Default value is I<1>.
+Automatically commit transaction after each SQL query. Default value is C<1>.
 
 =back
 

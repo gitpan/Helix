@@ -8,25 +8,28 @@ package Helix::Driver::Log::Exceptions;
 #
 # ==============================================================================
 
-our $VERSION = "0.01"; # 2009-01-25 17:40:51
+use warnings;
+use strict;
+
+our $VERSION = "0.02"; # 2009-05-14 05:44:28
 
 use Helix::Core::Exception::Builder 
 (
-    "Error::Driver::Log" => 
+    "HXError::Driver::Log" => 
     {
-        "isa"   => "Error::Driver",
+        "isa"   => "HXError::Driver",
         "title" => "Log driver error"
     },
 
-    "Error::Driver::Log::Directory" => 
+    "HXError::Driver::Log::Directory" => 
     {
-        "isa"   => "Error::Driver::Log",
+        "isa"   => "HXError::Driver::Log",
         "title" => "Cannot open log directory"
     },
 
-    "Error::Driver::Log::Open" => 
+    "HXError::Driver::Log::Open" => 
     {
-        "isa"   => "Error::Driver::Log",
+        "isa"   => "HXError::Driver::Log",
         "title" => "Cannot open log file"
     }
 );
@@ -41,10 +44,9 @@ Helix::Driver::Log::Exceptions - Helix Framework log driver exceptions.
 
 =head1 SYNOPSIS
 
-In error handler of your application (C<lib/Example/Controller/_Error.pm>) you
-could write:
+In error handler of your application (C<lib/Example/Error.pm>) you could write:
 
-    if ($e == Error::Driver::Log::Open)
+    if ($e eq "Error::Driver::Log::Open")
     {
         print "Cannot open log file!";
     }

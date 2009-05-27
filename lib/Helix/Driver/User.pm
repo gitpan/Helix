@@ -1,22 +1,21 @@
-package Helix::Driver::User::Generic;
+package Helix::Driver::User;
 # ==============================================================================
 #
 #   Helix Framework
 #   Copyright (c) 2009, Atma 7 
 #   ---
-#   Helix/Driver/User/Generic.pm - generic user driver
+#   Helix/Driver/User.pm - generic user driver
 #
 # ==============================================================================
 
-use Helix::Core::Driver::Types;
+use base qw/Helix::Driver Class::Accessor::Fast/;
 use Helix::Driver::User::Exceptions;
 use warnings;
 use strict;
 
-our $VERSION  = "0.01"; # 2008-07-12 02:22:48
+__PACKAGE__->mk_accessors(qw/agent ip language referer/);
 
-# driver type
-use constant DRIVER_TYPE => DT_USER;
+our $VERSION  = "0.02"; # 2009-05-14 05:33:34
 
 # ------------------------------------------------------------------------------
 # \% new()
@@ -38,7 +37,7 @@ sub new
     };
 
     bless $self, $class;
-    $self->_init();
+    $self->_init;
 
     return $self;
 }
@@ -53,15 +52,15 @@ sub _init()
 
     $self = shift;
 
-    $self->{"agent"}   = $ENV{"HTTP_USER_AGENT"}      if ($ENV{"HTTP_USER_AGENT"});
-    $self->{"referer"} = $ENV{"HTTP_REFERER"}         if ($ENV{"HTTP_REFERER"});
-    $self->{"ip"}      = $ENV{"REMOTE_ADDR"}          if ($ENV{"REMOTE_ADDR"});
-    $self->{"ip"}      = $ENV{"HTTP_X_FORWARDED_FOR"} if ($ENV{"HTTP_X_FORWARDED_FOR"});
+    $self->agent  ( $ENV{"HTTP_USER_AGENT"}      ) if ($ENV{"HTTP_USER_AGENT"});
+    $self->referer( $ENV{"HTTP_REFERER"}         ) if ($ENV{"HTTP_REFERER"});
+    $self->ip     ( $ENV{"REMOTE_ADDR"}          ) if ($ENV{"REMOTE_ADDR"});
+    $self->ip     ( $ENV{"HTTP_X_FORWARDED_FOR"} ) if ($ENV{"HTTP_X_FORWARDED_FOR"});
 
     if ($ENV{"HTTP_ACCEPT_LANGUAGE"}) 
     {
         ($buffer) = $ENV{"HTTP_ACCEPT_LANGUAGE"} =~ /^([^;]+);/;
-        $self->{"language"} = substr($buffer, 0, index($buffer, ",")) if (index($buffer, ",") != -1);
+        $self->language( substr($buffer, 0, index($buffer, ",")) ) if ($buffer && index($buffer, ",") != -1);
     }
 }
 
@@ -71,7 +70,7 @@ sub _init()
 # ------------------------------------------------------------------------------
 sub authorize
 {
-    throw Error::Core::AbstractMethod;
+    throw HXError::Core::AbstractMethod;
 }
 
 # ------------------------------------------------------------------------------
@@ -80,16 +79,16 @@ sub authorize
 # ------------------------------------------------------------------------------
 sub unauthorize
 {
-    throw Error::Core::AbstractMethod;
+    throw HXError::Core::AbstractMethod;
 }
 
 # ------------------------------------------------------------------------------
-# $ is_authorized()
+# $ authorized()
 # check if user is authorized
 # ------------------------------------------------------------------------------
-sub is_authorized
+sub authorized
 {
-    throw Error::Core::AbstractMethod;
+    throw HXError::Core::AbstractMethod;
 }
 
 1;
@@ -98,31 +97,27 @@ __END__
 
 =head1 NAME
 
-Helix::Driver::User::Generic - Helix Framework generic user driver.
+Helix::Driver::User - Helix Framework generic user driver.
 
 =head1 SYNOPSIS
 
 Example user driver:
 
-    package Helix::Driver::User::Example;
-    use base qw/Helix::Driver::User::Generic/;
+    package MyApp::Driver::User;
+    use base qw/Helix::Driver::User/;
 
-    use constant DRIVER_TYPE => DT_USER_EXAMPLE;
-
-    sub is_authorized
+    sub authorized
     {
         my $self = shift;
-        throw Error::Driver::User("This is just an example!");
+        throw HXError::Driver::User("This is just an example!");
     }
 
 =head1 DESCRIPTION
 
-The I<Helix::Driver::User::Generic> is a generic user driver for 
+The I<Helix::Driver::User> is a generic user driver for 
 I<Helix Framework>. It declares some functions that are common for all driver 
 types and some abstract methods, that I<must> be overloaded in ancestor classes.
 All user drivers should subclass this package.
-
-Driver type: C<DT_USER>.
 
 =head1 METHODS
 
@@ -141,7 +136,7 @@ Authorize user. Abstract method, should be overloaded in ancestor class.
 
 Unauthorize user. Abstract method, should be overloaded in ancestor class.
 
-=head2 is_authorized()
+=head2 authorized()
 
 Checks if user is authorized. Abstract method, should be overloaded in ancestor
 class.
@@ -153,17 +148,17 @@ information.
 
 =head1 ATTRIBUTES
 
-The I<Helix::Driver::User::Generic> package has got several useful class 
+The I<Helix::Driver::User> package has got several useful class 
 attributes that filled in during object initialization. These variables could be
-accessed through driver object using hashref syntax:
+accessed through driver object using hashref or subroutine syntax:
 
     my ($r, $user, $ip, $referer);
 
     $r       = Helix::Core::Registry->get_instance;
-    $user    = $r->{"driver"}->get_object(DT_USER);
+    $user    = $r->loader->get_object("Helix::Driver::User");
 
-    $ip      = $user->{"ip"};
-    $referer = $user->{"referer"};
+    $ip      = $user->ip;       # or $user->{"ip"}
+    $referer = $user->referer;  # or $user->{"referer"}
 
 =head2 agent
 

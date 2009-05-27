@@ -4,15 +4,13 @@
 #   Helix Framework
 #   Copyright (c) 2009, Atma 7
 #   ---
-#   t/application.t - application tests
+#   t/driver/log.t - generic log driver tests
 #
 # ==============================================================================  
 
-use Test::More tests => 5;
+use Test::More tests => 7;
 use warnings;
 use strict;
-
-my $app;
 
 # ------------------------------------------------------------------------------
 # BEGIN()
@@ -20,16 +18,14 @@ my $app;
 # ------------------------------------------------------------------------------
 BEGIN
 {
-    use_ok("Helix::Application");
+    use_ok("Helix::Driver::Exceptions");
+    use_ok("Helix::Driver::Log");
 }
 
 # methods
-ok( Helix::Application->can("start"),          "start method"          );
-ok( Helix::Application->can("handle_request"), "handle_request method" );
-
-$app = Helix::Application->new;
-
-# application types
-is( $app->TYPE_CGI,  0, "CGI application type"  );
-is( $app->TYPE_FCGI, 1, "FCGI application type" );
+ok( Helix::Driver::Log->can("open"),    "open method"    );
+ok( Helix::Driver::Log->can("close"),   "close method"   );
+ok( Helix::Driver::Log->can("notice"),  "notice method"  );
+ok( Helix::Driver::Log->can("warning"), "warning method" );
+ok( Helix::Driver::Log->can("error"),   "error method"   );
 

@@ -8,26 +8,35 @@ package Helix::Driver::DB::Exceptions;
 #
 # ==============================================================================
 
-our $VERSION = "0.01"; # 2009-01-25 17:40:15
+use warnings;
+use strict;
+
+our $VERSION = "0.02"; # 2009-05-14 05:36:22
 
 use Helix::Core::Exception::Builder 
 (
-    "Error::Driver::DB" => 
+    "HXError::Driver::DB" => 
     {
-        "isa"   => "Error::Driver",
+        "isa"   => "HXError::Driver",
         "title" => "Database driver error"
     },
 
-    "Error::Driver::DB::Connect" => 
+    "HXError::Driver::DB::Connect" => 
     {
-        "isa"   => "Error::Driver::DB",
+        "isa"   => "HXError::Driver::DB",
         "title" => "Database connect error"
     },
 
-    "Error::Driver::DB::SQL" => 
+    "HXError::Driver::DB::SQL" => 
     {
-        "isa"   => "Error::Driver::DB",
+        "isa"   => "HXError::Driver::DB",
         "title" => "SQL query error"
+    },
+
+    "HXError::Driver::DB::AlreadyFetched" =>
+    {
+        "isa"   => "HXError::Driver::DB",
+        "title" => "Data is already fetched during query execution (auto_fetch option is on)"
     }
 );
 
@@ -41,10 +50,9 @@ Helix::Driver::DB::Exceptions - Helix Framework database driver exceptions.
 
 =head1 SYNOPSIS
 
-In error handler of your application (C<lib/Example/Controller/_Error.pm>) you
-could write:
+In error handler of your application (C<lib/Example/Error.pm>) you could write:
 
-    if ($e == Error::Driver::DB::SQL)
+    if ($e eq "HXError::Driver::DB::SQL")
     {
         print "You have an error in your SQL syntax!";
     }
